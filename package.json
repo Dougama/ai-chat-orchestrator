@@ -1,0 +1,31 @@
+{
+  "name": "ai-chat-orchestrator",
+  "version": "1.0.0",
+  "private": true,
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "nodemon --watch src --exec ts-node -r ./src/config/preload.ts src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "type-check": "tsc --noEmit",
+    "gcp-build": "npm run build"
+  },
+  "dependencies": {
+    "@google-cloud/aiplatform": "^4.2.0",
+    "@google-cloud/discoveryengine": "^2.2.0",
+    "@google-cloud/firestore": "^7.11.1",
+    "@google/genai": "^1.5.1",
+    "cors": "^2.8.5",
+    "dotenv": "^16.5.0",
+    "express": "^4.19.2",
+    "pdf-parse": "^1.1.1",
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.19.1",
+    "nodemon": "^3.1.2",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.5"
+  }
+}
