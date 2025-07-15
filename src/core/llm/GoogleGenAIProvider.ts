@@ -55,8 +55,36 @@ export const aiGenerateContent = async (prompt: string): Promise<string> => {
 // Provider class implementation (future use)
 export class GoogleGenAIProvider implements ILLMProvider {
   async generateContent(request: GenerationRequest): Promise<GenerationResponse> {
-    const text = await aiGenerateContent(request.prompt);
-    return { text };
+    const generateConfig: any = {
+      model: GENERATIVE_MODEL_ID,
+      contents: request.prompt,
+      config: {
+        temperature: request.config?.temperature || 0.3,
+        maxOutputTokens: request.config?.maxOutputTokens || 1000,
+        topK: request.config?.topK || 40,
+        topP: request.config?.topP || 0.95,
+      },
+    };
+
+    // Agregar herramientas si están presentes
+    if (request.tools && request.tools.length > 0) {
+      generateConfig.tools = request.tools;
+    }
+    
+    if (request.toolConfig) {
+      generateConfig.toolConfig = request.toolConfig;
+    }
+
+    const response = await ai.models.generateContent(generateConfig);
+    
+    if (!response || !response.text) {
+      throw new Error("No se generó contenido.");
+    }
+    
+    return {
+      text: response.text,
+      functionCalls: response.functionCalls || []
+    };
   }
 
   async getEmbedding(request: EmbeddingRequest): Promise<EmbeddingResponse> {

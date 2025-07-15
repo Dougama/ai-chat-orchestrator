@@ -4,19 +4,28 @@ import { ChatManager } from "../chat/ChatManager";
 import { MessageManager } from "../chat/MessageManager";
 import { RAGPipeline } from "../rag/RAGPipeline";
 import { GoogleGenAIProvider } from "../llm/GoogleGenAIProvider";
+import { MCPConnectionManager } from "../mcp/MCPConnectionManager";
+import { MCPAdapter } from "../mcp/MCPAdapter";
+import { MCPFallbackHandler } from "../mcp/MCPFallbackHandler";
+import { MCPConnection } from "../mcp/interfaces";
 import { Firestore } from "@google-cloud/firestore";
 
 export class ConversationOrchestrator {
   private static llmProvider = new GoogleGenAIProvider();
+  private static mcpConnectionManager = new MCPConnectionManager();
+  private static mcpAdapter = new MCPAdapter();
+  private static mcpFallbackHandler = new MCPFallbackHandler();
 
   /**
-   * Maneja el flujo completo de conversación
+   * Maneja el flujo completo de conversación con soporte MCP
    * @param firestore Instancia de Firestore del centro
    * @param request Request de conversación
+   * @param centerId ID del centro para conexión MCP
    */
   static async handleChatPrompt(
     firestore: Firestore,
-    request: ChatRequest
+    request: ChatRequest,
+    centerId?: string
   ): Promise<ChatWithMessages> {
     console.log(
       `Recibido prompt: "${request.prompt}", para el chat ID: ${
@@ -45,17 +54,75 @@ export class ConversationOrchestrator {
       history
     );
 
-    // 5. Generamos la respuesta del asistente
-    const response = await this.llmProvider.generateContent({ prompt: augmentedPrompt });
-    const assistantText = response.text;
+    // 5. Preparamos herramientas MCP si tenemos centerId
+    let tools: any[] = [];
+    let mcpConnection: MCPConnection | null = null;
+    
+    if (centerId) {
+      try {
+        // Intentar conectar a MCP del centro
+        mcpConnection = await this.mcpConnectionManager.connectToCenter(centerId);
+        
+        if (mcpConnection.isConnected) {
+          // Obtener herramientas disponibles del centro
+          const mcpTools = await this.mcpConnectionManager.getAvailableTools(centerId);
+          const validTools = this.mcpAdapter.filterValidMCPTools(mcpTools);
+          
+          if (validTools.length > 0) {
+            // Convertir herramientas MCP a formato Google GenAI
+            tools = this.mcpAdapter.convertMCPToolsToGenAI(validTools);
+            console.log(`ConversationOrchestrator: ${tools.length} herramientas MCP configuradas para ${centerId}`);
+          }
+        }
+      } catch (error) {
+        console.warn(`ConversationOrchestrator: Error conectando MCP para ${centerId}:`, error);
+        // Continuar sin herramientas MCP
+      }
+    }
 
-    // 6. Guardamos la respuesta del asistente
+    // 6. Generamos la respuesta del asistente (con herramientas MCP si están disponibles)
+    const generationConfig = {
+      prompt: augmentedPrompt,
+      ...(tools.length > 0 && {
+        tools: [{ functionDeclarations: tools }],
+        toolConfig: {
+          functionCallingConfig: {
+            mode: 'AUTO' as const,
+            allowedFunctionNames: tools.map(t => t.name)
+          }
+        }
+      })
+    };
+
+    const response = await this.llmProvider.generateContent(generationConfig);
+    let assistantText = response.text || '';
+
+    // 7. Procesar function calls si existen
+    if (response.functionCalls && response.functionCalls.length > 0 && centerId) {
+      const functionCallResults = await this.processFunctionCalls(
+        centerId,
+        response.functionCalls,
+        mcpConnection
+      );
+      
+      if (functionCallResults.length > 0) {
+        // Generar respuesta final con resultados de herramientas
+        const finalResponse = await this.generateFinalResponse(
+          augmentedPrompt,
+          functionCallResults,
+          tools
+        );
+        assistantText = finalResponse.text || assistantText;
+      }
+    }
+
+    // 8. Guardamos la respuesta del asistente
     const assistantDocId = await MessageManager.saveAssistantMessage(firestore, chatId, assistantText);
 
-    // 7. Actualizamos la fecha del chat
+    // 9. Actualizamos la fecha del chat
     await ChatManager.updateChatTimestamp(firestore, chatId);
 
-    // 8. Devolvemos la respuesta
+    // 10. Devolvemos la respuesta
     return {
       id: assistantDocId,
       role: "assistant",
@@ -63,5 +130,85 @@ export class ConversationOrchestrator {
       timestamp: new Date(),
       chatId: chatId,
     };
+  }
+
+  /**
+   * Procesa function calls ejecutándolas en el servidor MCP
+   */
+  private static async processFunctionCalls(
+    centerId: string,
+    functionCalls: any[],
+    mcpConnection: MCPConnection | null
+  ): Promise<any[]> {
+    const results: any[] = [];
+    
+    for (const functionCall of functionCalls) {
+      try {
+        // Convertir function call a formato MCP
+        const mcpToolCalls = this.mcpAdapter.convertGenAIResultsToMCP([functionCall]);
+        
+        if (mcpToolCalls.length > 0) {
+          const mcpToolCall = mcpToolCalls[0];
+          
+          // Ejecutar herramienta MCP
+          let toolResult;
+          if (mcpConnection?.isConnected) {
+            toolResult = await this.mcpConnectionManager.executeToolCall(centerId, mcpToolCall);
+          } else {
+            // Usar fallback si MCP no está disponible
+            toolResult = await this.mcpFallbackHandler.executeFallbackTool(mcpToolCall);
+          }
+          
+          // Convertir resultado de vuelta a formato GenAI
+          const genAIResult = this.mcpAdapter.convertMCPResultsToGenAI([toolResult]);
+          if (genAIResult.length > 0) {
+            results.push(genAIResult[0]);
+          }
+        }
+      } catch (error) {
+        console.error(`ConversationOrchestrator: Error procesando function call:`, error);
+        // Continuar con otros function calls
+      }
+    }
+    
+    return results;
+  }
+
+  /**
+   * Genera respuesta final incorporando resultados de herramientas
+   */
+  private static async generateFinalResponse(
+    originalPrompt: string,
+    functionCallResults: any[],
+    tools: any[]
+  ): Promise<any> {
+    // Crear prompt enriquecido con resultados de herramientas
+    const toolResultsText = functionCallResults
+      .map(result => `Resultado de ${result.name}: ${JSON.stringify(result.response)}`)
+      .join('\n');
+    
+    const enhancedPrompt = `
+      ${originalPrompt}
+      
+      RESULTADOS DE HERRAMIENTAS:
+      ${toolResultsText}
+      
+      Incorpora estos resultados en tu respuesta de manera natural y útil para el usuario.
+    `;
+    
+    return await this.llmProvider.generateContent({
+      prompt: enhancedPrompt,
+      tools: tools.length > 0 ? [{ functionDeclarations: tools }] : undefined
+    });
+  }
+
+  /**
+   * Versión simplificada para compatibilidad con código existente
+   */
+  static async handleChatPromptSimple(
+    firestore: Firestore,
+    request: ChatRequest
+  ): Promise<ChatWithMessages> {
+    return await this.handleChatPrompt(firestore, request);
   }
 }

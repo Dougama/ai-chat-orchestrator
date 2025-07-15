@@ -17,10 +17,13 @@ export interface EmbeddingResponse {
 export interface GenerationRequest {
   prompt: string;
   config?: GenerationConfig;
+  tools?: any[];
+  toolConfig?: any;
 }
 
 export interface GenerationResponse {
   text: string;
+  functionCalls?: any[];
 }
 
 export interface ILLMProvider {

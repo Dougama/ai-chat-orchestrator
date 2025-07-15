@@ -18,7 +18,7 @@ interface ChatRequest {
 export const handleChatPrompt = async (
   request: ChatRequest
 ): Promise<ChatMessage & { chatId: string }> => {
-  return await ConversationOrchestrator.handleChatPrompt(firestore, request);
+  return await ConversationOrchestrator.handleChatPromptSimple(firestore, request);
 };
 
 export const listUserChats = async (
