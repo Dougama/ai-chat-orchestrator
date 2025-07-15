@@ -9,6 +9,7 @@ import { MCPAdapter } from "../mcp/MCPAdapter";
 import { MCPFallbackHandler } from "../mcp/MCPFallbackHandler";
 import { MCPConnection } from "../mcp/interfaces";
 import { Firestore } from "@google-cloud/firestore";
+import { FunctionCallingConfigMode } from "@google/genai";
 
 export class ConversationOrchestrator {
   private static llmProvider = new GoogleGenAIProvider();
@@ -72,6 +73,7 @@ export class ConversationOrchestrator {
             // Convertir herramientas MCP a formato Google GenAI
             tools = this.mcpAdapter.convertMCPToolsToGenAI(validTools);
             console.log(`ConversationOrchestrator: ${tools.length} herramientas MCP configuradas para ${centerId}`);
+            console.log('DEBUG: Herramientas MCP convertidas:', JSON.stringify(tools, null, 2));
           }
         }
       } catch (error) {
@@ -87,15 +89,23 @@ export class ConversationOrchestrator {
         tools: [{ functionDeclarations: tools }],
         toolConfig: {
           functionCallingConfig: {
-            mode: 'AUTO' as const,
+            mode: FunctionCallingConfigMode.ANY,
             allowedFunctionNames: tools.map(t => t.name)
           }
         }
       })
     };
 
+    console.log('DEBUG: Configuración enviada a LLM:', JSON.stringify(generationConfig, null, 2));
+    
     const response = await this.llmProvider.generateContent(generationConfig);
     let assistantText = response.text || '';
+
+    console.log('DEBUG: Respuesta LLM:', {
+      text: assistantText?.substring(0, 100) + '...',
+      hasFunctionCalls: !!(response.functionCalls && response.functionCalls.length > 0),
+      functionCallsCount: response.functionCalls?.length || 0
+    });
 
     // 7. Procesar function calls si existen
     if (response.functionCalls && response.functionCalls.length > 0 && centerId) {

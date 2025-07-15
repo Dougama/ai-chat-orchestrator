@@ -180,135 +180,180 @@ export class MCPConnectionManager implements IMCPConnectionManager {
   // Métodos privados para simulación
 
   private getMCPServerUrl(centerId: string): string {
-    // URLs mock para servidores MCP por centro
+    // URL real del servidor MCP (temporal: todos apuntan a Cúcuta)
+    // TODO: Definir URLs específicas por centro cuando se implemente caracterización de usuarios
+    const MCP_SERVER_URL = 'https://cd-cucuta-service-280914661682.us-central1.run.app/api/mcp';
+    
     const serverUrls = {
-      'bogota': 'ws://localhost:8081/mcp',
-      'medellin': 'ws://localhost:8082/mcp',
-      'cucuta': 'ws://localhost:8083/mcp'
+      'bogota': MCP_SERVER_URL,
+      'medellin': MCP_SERVER_URL, 
+      'cucuta': MCP_SERVER_URL
     };
-    return serverUrls[centerId as keyof typeof serverUrls] || 'ws://localhost:8080/mcp';
+    return serverUrls[centerId as keyof typeof serverUrls] || MCP_SERVER_URL;
   }
 
   private async establishConnection(connection: MCPConnection): Promise<boolean> {
-    // Simular tiempo de conexión
-    await new Promise(resolve => setTimeout(resolve, 100));
-    
-    // Simular éxito/fallo de conexión (95% éxito)
-    return Math.random() > 0.05;
+    try {
+      // Hacer ping al servidor MCP real
+      const response = await fetch(`${connection.serverUrl}/health`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        signal: AbortSignal.timeout(5000)
+      });
+      
+      if (response.ok) {
+        console.log(`MCPConnectionManager: Conexión exitosa a ${connection.serverUrl}`);
+        return true;
+      } else {
+        console.warn(`MCPConnectionManager: Servidor MCP respondió con status ${response.status}`);
+        return false;
+      }
+    } catch (error) {
+      console.error(`MCPConnectionManager: Error conectando a ${connection.serverUrl}:`, error);
+      return false;
+    }
   }
 
   private async fetchToolsFromMCPServer(centerId: string): Promise<MCPTool[]> {
-    // Simular herramientas específicas por centro
-    const centerTools = {
-      'bogota': [
-        {
-          name: 'check_inventory',
-          description: 'Verificar inventario en el centro de Bogotá',
-          parameters: {
-            type: 'object',
-            properties: {
-              product_id: { type: 'string', description: 'ID del producto' },
-              quantity: { type: 'number', description: 'Cantidad a verificar' }
-            },
-            required: ['product_id']
-          }
+    try {
+      const serverUrl = this.getMCPServerUrl(centerId);
+      
+      // Llamar al endpoint de tools del servidor MCP
+      const response = await fetch(`${serverUrl}/tools`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
         },
-        {
-          name: 'schedule_delivery',
-          description: 'Programar entrega desde centro Bogotá',
-          parameters: {
-            type: 'object',
-            properties: {
-              client_id: { type: 'string', description: 'ID del cliente' },
-              delivery_date: { type: 'string', description: 'Fecha de entrega' }
-            },
-            required: ['client_id', 'delivery_date']
-          }
+        signal: AbortSignal.timeout(10000)
+      });
+      
+      if (!response.ok) {
+        console.error(`MCPConnectionManager: Error obteniendo tools: ${response.status}`);
+        return [];
+      }
+      
+      const toolsData = await response.json() as any;
+      
+      // Procesar y normalizar las herramientas del servidor MCP
+      const tools: MCPTool[] = toolsData.tools ? toolsData.tools.map((tool: any) => ({
+        name: tool.name,
+        description: tool.description,
+        parameters: tool.inputSchema || tool.parameters || {
+          type: 'object',
+          properties: {},
+          required: []
         }
-      ],
-      'medellin': [
-        {
-          name: 'check_inventory',
-          description: 'Verificar inventario en el centro de Medellín',
-          parameters: {
-            type: 'object',
-            properties: {
-              product_id: { type: 'string', description: 'ID del producto' },
-              quantity: { type: 'number', description: 'Cantidad a verificar' }
-            },
-            required: ['product_id']
-          }
-        }
-      ],
-      'cucuta': [
-        {
-          name: 'check_inventory',
-          description: 'Verificar inventario en el centro de Cúcuta',
-          parameters: {
-            type: 'object',
-            properties: {
-              product_id: { type: 'string', description: 'ID del producto' },
-              quantity: { type: 'number', description: 'Cantidad a verificar' }
-            },
-            required: ['product_id']
-          }
-        }
-      ]
-    };
-
-    // Simular tiempo de fetch
-    await new Promise(resolve => setTimeout(resolve, 50));
-    
-    return centerTools[centerId as keyof typeof centerTools] || [];
+      })) : [];
+      
+      console.log(`MCPConnectionManager: Obtenidas ${tools.length} herramientas desde ${serverUrl}`);
+      return tools;
+      
+    } catch (error) {
+      console.error(`MCPConnectionManager: Error obteniendo herramientas para ${centerId}:`, error);
+      return [];
+    }
   }
 
   private async executeMCPTool(centerId: string, toolCall: MCPToolCall): Promise<MCPToolResult> {
-    // Simular ejecución de herramienta
-    await new Promise(resolve => setTimeout(resolve, 200));
-    
-    // Simular resultados diferentes según la herramienta
-    if (toolCall.toolName === 'check_inventory') {
+    try {
+      const serverUrl = this.getMCPServerUrl(centerId);
+      
+      // Crear request MCP válido
+      const mcpRequest = {
+        jsonrpc: '2.0',
+        id: `tool_call_${Date.now()}`,
+        method: 'tools/call',
+        params: {
+          name: toolCall.toolName,
+          arguments: toolCall.parameters
+        }
+      };
+      
+      // Ejecutar la herramienta en el servidor MCP usando el endpoint correcto
+      const response = await fetch(`${serverUrl}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(mcpRequest),
+        signal: AbortSignal.timeout(30000)
+      });
+      
+      if (!response.ok) {
+        return {
+          toolName: toolCall.toolName,
+          callId: toolCall.callId,
+          success: false,
+          error: `Error HTTP ${response.status}: ${response.statusText}`
+        };
+      }
+      
+      const result = await response.json() as any;
+      
+      // Procesar respuesta del servidor MCP
+      if (result.error) {
+        return {
+          toolName: toolCall.toolName,
+          callId: toolCall.callId,
+          success: false,
+          error: result.error.message || 'Error desconocido del servidor MCP'
+        };
+      }
+      
+      // Extraer datos del formato MCP
+      let data: any = result.result;
+      
+      // Si el resultado tiene content (formato MCP), extraer el texto y parsearlo
+      if (result.result && result.result.content && Array.isArray(result.result.content)) {
+        const textContent = result.result.content.find((c: any) => c.type === 'text');
+        if (textContent && textContent.text) {
+          try {
+            data = JSON.parse(textContent.text);
+          } catch (parseError) {
+            console.warn('MCPConnectionManager: No se pudo parsear JSON del contenido MCP:', parseError);
+            data = { content: textContent.text };
+          }
+        }
+      }
+      
       return {
         toolName: toolCall.toolName,
         callId: toolCall.callId,
         success: true,
-        data: {
-          product_id: toolCall.parameters.product_id,
-          available_quantity: Math.floor(Math.random() * 1000),
-          center: centerId
-        }
+        data: data
       };
-    }
-    
-    if (toolCall.toolName === 'schedule_delivery') {
+      
+    } catch (error) {
+      console.error(`MCPConnectionManager: Error ejecutando ${toolCall.toolName}:`, error);
+      
       return {
         toolName: toolCall.toolName,
         callId: toolCall.callId,
-        success: true,
-        data: {
-          delivery_id: `DEL_${Date.now()}`,
-          client_id: toolCall.parameters.client_id,
-          delivery_date: toolCall.parameters.delivery_date,
-          center: centerId
-        }
+        success: false,
+        error: error instanceof Error ? error.message : 'Error de conexión MCP'
       };
     }
-
-    // Resultado por defecto
-    return {
-      toolName: toolCall.toolName,
-      callId: toolCall.callId,
-      success: true,
-      data: { message: `Herramienta ${toolCall.toolName} ejecutada en ${centerId}` }
-    };
   }
 
   private async pingMCPServer(centerId: string): Promise<boolean> {
-    // Simular ping
-    await new Promise(resolve => setTimeout(resolve, 50));
-    
-    // Simular éxito de ping (98% éxito)
-    return Math.random() > 0.02;
+    try {
+      const serverUrl = this.getMCPServerUrl(centerId);
+      
+      const response = await fetch(`${serverUrl}/health`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        signal: AbortSignal.timeout(5000)
+      });
+      
+      return response.ok;
+    } catch (error) {
+      console.error(`MCPConnectionManager: Ping failed for ${centerId}:`, error);
+      return false;
+    }
   }
 
   private startHealthCheck(centerId: string): void {

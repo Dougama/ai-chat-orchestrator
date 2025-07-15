@@ -25,11 +25,61 @@ export class MCPAdapter {
       };
     }
 
+    // Limpiar properties para que sean compatibles con Google GenAI
+    const cleanProperties = this.cleanPropertiesForGenAI(mcpParameters.properties || {});
+
     return {
       type: Type.OBJECT,
-      properties: mcpParameters.properties || {},
+      properties: cleanProperties,
       required: mcpParameters.required || []
+      // Filtrar campos no soportados como examples, additionalProperties, etc.
     };
+  }
+
+  /**
+   * Limpia las propiedades de un schema para que sean compatibles con Google GenAI
+   * Filtra campos no soportados como enumDescriptions, examples, etc.
+   */
+  private cleanPropertiesForGenAI(properties: any): any {
+    const cleanedProperties: any = {};
+
+    for (const [key, value] of Object.entries(properties)) {
+      if (typeof value === 'object' && value !== null) {
+        const cleanedValue: any = {};
+        const valueObj = value as any;
+        
+        // Campos permitidos por Google GenAI
+        const allowedFields = [
+          'type', 'description', 'enum', 'pattern', 'minimum', 'maximum',
+          'minLength', 'maxLength', 'items', 'properties', 'required',
+          'additionalProperties', 'default'
+        ];
+
+        // Copiar solo campos permitidos
+        for (const field of allowedFields) {
+          if (field in valueObj) {
+            cleanedValue[field] = valueObj[field];
+          }
+        }
+
+        // Si tiene enumDescriptions, incorporar en description
+        if (valueObj.enumDescriptions && valueObj.enum) {
+          const enumDescs = Object.entries(valueObj.enumDescriptions)
+            .map(([key, desc]) => `• ${key}: ${desc}`)
+            .join('\n');
+          
+          cleanedValue.description = cleanedValue.description 
+            ? `${cleanedValue.description}\n\nOpciones disponibles:\n${enumDescs}`
+            : `Opciones disponibles:\n${enumDescs}`;
+        }
+
+        cleanedProperties[key] = cleanedValue;
+      } else {
+        cleanedProperties[key] = value;
+      }
+    }
+
+    return cleanedProperties;
   }
 
   /**

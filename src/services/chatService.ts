@@ -18,7 +18,9 @@ interface ChatRequest {
 export const handleChatPrompt = async (
   request: ChatRequest
 ): Promise<ChatMessage & { chatId: string }> => {
-  return await ConversationOrchestrator.handleChatPromptSimple(firestore, request);
+  // Por defecto usar 'cucuta' hasta definir caracterización del usuario
+  const defaultCenterId = 'cucuta';
+  return await ConversationOrchestrator.handleChatPrompt(firestore, request, defaultCenterId);
 };
 
 export const listUserChats = async (

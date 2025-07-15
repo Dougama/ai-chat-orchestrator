@@ -199,8 +199,43 @@ class MCPToolCache {
 
 ---
 
-**Próxima Acción**: Implementar MCPAdapter para traducir herramientas MCP a Google GenAI Function Declarations
+## Estado Actual - 2025-01-15
 
-**Responsable**: Claude Code Assistant  
-**Fecha objetivo**: 2025-01-22  
-**Estado**: READY TO START
+### **Implementación MCP COMPLETADA ✅**
+- MCPAdapter: Traducción herramientas MCP ↔ Google GenAI Function Declarations
+- MCPConnectionManager: Conexión real a servidor `https://cd-cucuta-service-280914661682.us-central1.run.app/api/mcp`
+- MCPToolCache: Cache inteligente con TTL 5 minutos
+- MCPFallbackHandler: Manejo de fallbacks cuando MCP no disponible
+
+### **Problema Crítico Detectado 🔴**
+**Function Calling no se activa** - Google GenAI recibe herramientas MCP correctamente pero no las ejecuta.
+
+**Diagnóstico:**
+- ✅ MCP conecta exitosamente (4 herramientas: `create_novedad`, `list_novedades`, `get_compensacion_variable`, `get_rendimientos`)
+- ✅ Herramientas se convierten correctamente a formato Google GenAI
+- ✅ Configuración se envía al LLM con `FunctionCallingConfigMode.ANY`
+- ❌ **Google GenAI responde con texto en lugar de function calls**
+
+**Causa Identificada:**
+Al revisar los tipos en `node_modules/@google/genai`, se descubrió que `tools` y `toolConfig` deben ir **dentro de `config`**, no al nivel raíz de `generateConfig`.
+
+**Corrección Aplicada:**
+```typescript
+// ANTES (incorrecto):
+generateConfig.tools = request.tools;
+generateConfig.toolConfig = request.toolConfig;
+
+// AHORA (correcto según tipos):
+config: {
+  ...otherConfig,
+  tools: request.tools,
+  toolConfig: request.toolConfig
+}
+```
+
+### **Próxima Acción Inmediata**
+**Probar la estructura corregida** para verificar si Google GenAI ahora activa function calling correctamente y ejecuta las herramientas MCP del servidor de Cúcuta.
+
+**Fecha**: 2025-01-15  
+**Prioridad**: CRÍTICA  
+**Estado**: READY TO TEST

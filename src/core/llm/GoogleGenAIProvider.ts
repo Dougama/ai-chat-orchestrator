@@ -63,26 +63,27 @@ export class GoogleGenAIProvider implements ILLMProvider {
         maxOutputTokens: request.config?.maxOutputTokens || 1000,
         topK: request.config?.topK || 40,
         topP: request.config?.topP || 0.95,
+        // Agregar herramientas si están presentes
+        ...(request.tools && request.tools.length > 0 && { tools: request.tools }),
+        ...(request.toolConfig && { toolConfig: request.toolConfig })
       },
     };
 
-    // Agregar herramientas si están presentes
-    if (request.tools && request.tools.length > 0) {
-      generateConfig.tools = request.tools;
-    }
-    
-    if (request.toolConfig) {
-      generateConfig.toolConfig = request.toolConfig;
-    }
-
     const response = await ai.models.generateContent(generateConfig);
     
-    if (!response || !response.text) {
+    console.log('DEBUG GoogleGenAIProvider: Response raw:', {
+      hasText: !!response?.text,
+      hasFunctionCalls: !!response?.functionCalls,
+      functionCallsLength: response?.functionCalls?.length || 0,
+      functionCallsRaw: response?.functionCalls
+    });
+    
+    if (!response || (!response.text && !response.functionCalls)) {
       throw new Error("No se generó contenido.");
     }
     
     return {
-      text: response.text,
+      text: response.text || "",
       functionCalls: response.functionCalls || []
     };
   }
