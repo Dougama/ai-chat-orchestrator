@@ -1,4 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
+import { ILLMProvider, IEmbeddingProvider, GenerationRequest, GenerationResponse, EmbeddingRequest, EmbeddingResponse } from "./interfaces";
 
 const PROJECT_ID = process.env.GCP_PROJECT_ID;
 const LOCATION = process.env.GCP_LOCATION || "us-central1";
@@ -50,3 +51,16 @@ export const aiGenerateContent = async (prompt: string): Promise<string> => {
   }
   return response.text;
 };
+
+// Provider class implementation (future use)
+export class GoogleGenAIProvider implements ILLMProvider {
+  async generateContent(request: GenerationRequest): Promise<GenerationResponse> {
+    const text = await aiGenerateContent(request.prompt);
+    return { text };
+  }
+
+  async getEmbedding(request: EmbeddingRequest): Promise<EmbeddingResponse> {
+    const values = await getEmbedding(request.text);
+    return { values: values || [] };
+  }
+}

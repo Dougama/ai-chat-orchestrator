@@ -1,4 +1,11 @@
-import { ToolDefinition } from "shared-types"; // ¡Ventaja del Monorepo!
+// import { ToolDefinition } from "shared-types"; // ¡Ventaja del Monorepo!
+
+// Temporary interface until shared-types is available
+interface ToolDefinition {
+  name: string;
+  description: string;
+  parameters: any;
+}
 
 // Podríamos hacer que el registro sea más seguro con tipos
 type ToolRegistry = {
