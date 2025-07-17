@@ -108,8 +108,9 @@ export class ConversationOrchestrator {
     });
 
     // 7. Procesar function calls si existen
+    let functionCallResults: any[] = [];
     if (response.functionCalls && response.functionCalls.length > 0 && centerId) {
-      const functionCallResults = await this.processFunctionCalls(
+      functionCallResults = await this.processFunctionCalls(
         centerId,
         response.functionCalls,
         mcpConnection
@@ -132,14 +133,47 @@ export class ConversationOrchestrator {
     // 9. Actualizamos la fecha del chat
     await ChatManager.updateChatTimestamp(firestore, chatId);
 
-    // 10. Devolvemos la respuesta
-    return {
+    // 10. Extraer datos MCP válidos para el campo data
+    const mcpDataByType: { [key: string]: any } = {};
+    let hasMcpData = false;
+
+    console.log('DEBUG ConversationOrchestrator: Function call results:', functionCallResults.map(r => ({
+      name: r.name,
+      hasResponse: !!r.response,
+      hasMcpData: !!r.response?.mcpData,
+      dataType: r.response?.dataType
+    })));
+
+    functionCallResults.forEach((result: any) => {
+      if (result.response?.mcpData && result.response?.dataType) {
+        mcpDataByType[result.response.dataType] = result.response.mcpData;
+        hasMcpData = true;
+        console.log('DEBUG ConversationOrchestrator: Agregando datos MCP:', {
+          dataType: result.response.dataType,
+          keys: Object.keys(result.response.mcpData)
+        });
+      }
+    });
+
+    console.log('DEBUG ConversationOrchestrator: Resultado final mcpData:', {
+      hasMcpData,
+      dataTypes: Object.keys(mcpDataByType)
+    });
+
+    // 11. Devolvemos la respuesta con campo data si hay datos MCP
+    const responseData: any = {
       id: assistantDocId,
-      role: "assistant",
+      role: "assistant" as const,
       content: assistantText,
       timestamp: new Date(),
-      chatId: chatId,
+      chatId: chatId
     };
+
+    if (hasMcpData) {
+      responseData.data = mcpDataByType;
+    }
+
+    return responseData;
   }
 
   /**

@@ -103,7 +103,11 @@ export class MCPAdapter {
   convertMCPResultsToGenAI(mcpResults: MCPToolResult[]): any[] {
     return mcpResults.map(result => ({
       name: result.toolName,
-      response: result.success ? result.data : { error: result.error }
+      response: result.success ? {
+        ...result.data,
+        mcpData: result.mcpData,
+        dataType: result.dataType
+      } : { error: result.error }
     }));
   }
 

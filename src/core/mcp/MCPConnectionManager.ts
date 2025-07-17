@@ -304,26 +304,40 @@ export class MCPConnectionManager implements IMCPConnectionManager {
       
       // Extraer datos del formato MCP
       let data: any = result.result;
+      let parsedMcpData: any = null;
       
       // Si el resultado tiene content (formato MCP), extraer el texto y parsearlo
       if (result.result && result.result.content && Array.isArray(result.result.content)) {
         const textContent = result.result.content.find((c: any) => c.type === 'text');
         if (textContent && textContent.text) {
           try {
-            data = JSON.parse(textContent.text);
+            parsedMcpData = JSON.parse(textContent.text);
+            data = parsedMcpData; // Mantener compatibilidad actual
           } catch (parseError) {
             console.warn('MCPConnectionManager: No se pudo parsear JSON del contenido MCP:', parseError);
             data = { content: textContent.text };
+            parsedMcpData = null;
           }
         }
       }
       
-      return {
+      const toolResult = {
         toolName: toolCall.toolName,
         callId: toolCall.callId,
         success: true,
-        data: data
+        data,
+        mcpData: parsedMcpData,
+        dataType: this.getDataTypeFromToolName(toolCall.toolName)
       };
+      
+      console.log('DEBUG MCPConnectionManager: Resultado final:', {
+        toolName: toolResult.toolName,
+        dataType: toolResult.dataType,
+        hasMcpData: !!toolResult.mcpData,
+        mcpDataKeys: toolResult.mcpData ? Object.keys(toolResult.mcpData) : []
+      });
+      
+      return toolResult;
       
     } catch (error) {
       console.error(`MCPConnectionManager: Error ejecutando ${toolCall.toolName}:`, error);
@@ -378,5 +392,16 @@ export class MCPConnectionManager implements IMCPConnectionManager {
     }, 30000);
 
     this.connectionTimeouts.set(centerId, timeout);
+  }
+
+  private getDataTypeFromToolName(toolName: string): string {
+    const dataTypeMap: { [key: string]: string } = {
+      'get_compensacion_variable': 'compensationData',
+      'get_rendimientos': 'rendimientosData',
+      'list_novedades': 'novedadesData',
+      'create_novedad': 'novedadCreatedData'
+    };
+    
+    return dataTypeMap[toolName] || 'mcpData';
   }
 }

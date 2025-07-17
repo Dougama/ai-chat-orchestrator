@@ -7,6 +7,17 @@ export interface ChatMessage {
   timestamp: Date;
 }
 
+export interface ChatResponseWithData extends ChatMessage {
+  chatId?: string;
+  data?: {
+    compensationData?: any;
+    rendimientosData?: any;
+    novedadesData?: any;
+    novedadCreatedData?: any;
+    [key: string]: any;
+  };
+}
+
 export interface ToolDefinition {
   name: string;
   description: string;

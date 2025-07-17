@@ -25,6 +25,8 @@ export interface MCPToolResult {
   callId: string;
   success: boolean;
   data?: any;
+  mcpData?: any;
+  dataType?: string;
   error?: string;
 }
 
