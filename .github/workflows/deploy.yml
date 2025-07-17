@@ -139,7 +139,7 @@ jobs:
           --cpu 1 \
           --min-instances 0 \
           --max-instances 2 \
-          --set-env-vars NODE_ENV=staging
+          --set-env-vars NODE_ENV=staging,GCP_PROJECT_ID=${{ env.PROJECT_ID }},GCP_LOCATION=${{ env.REGION }}
 
     - name: Run smoke tests
       run: |
@@ -183,7 +183,7 @@ jobs:
           --cpu 1 \
           --min-instances 0 \
           --max-instances 3 \
-          --set-env-vars NODE_ENV=production
+          --set-env-vars NODE_ENV=production,GCP_PROJECT_ID=${{ env.PROJECT_ID }},GCP_LOCATION=${{ env.REGION }}
 
     - name: Run production smoke tests
       run: |

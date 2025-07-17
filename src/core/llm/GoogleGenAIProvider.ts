@@ -7,10 +7,14 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const EMBEDDING_MODEL = "text-embedding-004";
 const GENERATIVE_MODEL_ID = "gemini-2.0-flash-001";
 
-if (!PROJECT_ID || !GEMINI_API_KEY) {
+if (!PROJECT_ID) {
   throw new Error(
-    "Faltan variables de entorno críticas. Revisa tu archivo .env (se necesita DEPLOYED_INDEX_ID)."
+    "Faltan variables de entorno críticas. Revisa tu archivo .env (se necesita GCP_PROJECT_ID)."
   );
+}
+
+if (!GEMINI_API_KEY) {
+  console.warn("GEMINI_API_KEY no está configurada. Algunas funcionalidades pueden no funcionar correctamente.");
 }
 
 const ai = new GoogleGenAI({
