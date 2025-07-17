@@ -1,37 +1,36 @@
 # Etapa 1: Build
-FROM node:18-slim AS builder
-
-RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
-RUN corepack enable && corepack prepare pnpm@latest --activate
+FROM node:20-slim AS builder
 
 WORKDIR /app
 
-# Copiar archivos de raíz del monorepo
-COPY pnpm-workspace.yaml ./
-COPY package.json ./
-COPY pnpm-lock.yaml ./
+# Copiar archivos de dependencias
+COPY package*.json ./
 
-# Copiar todos los paquetes
-COPY packages ./packages
+# Instalar dependencias
+RUN npm ci --only=production && npm cache clean --force
 
-# Instalar solo el paquete objetivo y sus dependencias
-RUN pnpm install --frozen-lockfile --filter ./packages/orchestrator-api...
+# Copiar código fuente
+COPY . .
 
 # Construir el proyecto
-WORKDIR /app/packages/orchestrator-api
-RUN pnpm build
+RUN npm run build
 
 # Etapa 2: Producción
-FROM node:18-slim
-
-RUN corepack enable && corepack prepare pnpm@latest --activate
+FROM node:20-slim
 
 WORKDIR /app
 
-# Copiar archivos necesarios desde la etapa anterior
-COPY --from=builder /app/packages/orchestrator-api/dist ./dist
-COPY --from=builder /app/packages/orchestrator-api/package.json ./
-COPY --from=builder /app/packages/orchestrator-api/node_modules ./node_modules
+# Crear usuario no root
+RUN useradd --create-home --shell /bin/bash app
 
-EXPOSE 3000
+# Copiar archivos necesarios desde la etapa anterior
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/package*.json ./
+COPY --from=builder /app/node_modules ./node_modules
+
+# Cambiar propietario de archivos
+RUN chown -R app:app /app
+USER app
+
+EXPOSE 8080
 CMD ["node", "dist/index.js"]

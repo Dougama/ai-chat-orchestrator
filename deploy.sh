@@ -24,8 +24,8 @@ REGION="us-central1"
 echo "🚀 Iniciando despliegue del backend..."
 
 # Variables del Backend
-BACKEND_SERVICE_NAME="agent-orchestrator-api-service"
-BACKEND_SOURCE_DIR="./packages/orchestrator-api"
+BACKEND_SERVICE_NAME="ai-chat-orchestrator"
+BACKEND_SOURCE_DIR="."
 BACKEND_IMAGE_REPO="us-central1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy"
 BACKEND_IMAGE_TAG="$BACKEND_IMAGE_REPO/$BACKEND_SERVICE_NAME:latest"
 
@@ -39,8 +39,7 @@ gcloud builds submit \
   --tag "$BACKEND_IMAGE_TAG" \
   --project="$PROJECT_ID" \
   --region="$REGION" \
-  --file="$BACKEND_SOURCE_DIR/Dockerfile" \
-  "$BACKEND_SOURCE_DIR"
+  .
 
 # ===========================
 # Despliegue en Cloud Run
