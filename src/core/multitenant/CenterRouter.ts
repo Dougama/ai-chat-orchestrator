@@ -140,11 +140,16 @@ export class CenterRouter implements ICenterRouter {
     const key = center.id;
     
     if (!this.firestoreConnections.has(key)) {
-      const firestore = new Firestore({
+      const firestoreConfig: any = {
         projectId: center.gcpProject.projectId,
-        keyFilename: center.gcpProject.serviceAccountPath,
-      });
+      };
       
+      // Solo agregar keyFilename si está definido
+      if (center.gcpProject.serviceAccountPath) {
+        firestoreConfig.keyFilename = center.gcpProject.serviceAccountPath;
+      }
+      
+      const firestore = new Firestore(firestoreConfig);
       this.firestoreConnections.set(key, firestore);
     }
     

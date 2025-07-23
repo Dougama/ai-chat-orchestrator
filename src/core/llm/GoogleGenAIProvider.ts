@@ -1,30 +1,26 @@
 import { GoogleGenAI } from "@google/genai";
-import { ILLMProvider, IEmbeddingProvider, GenerationRequest, GenerationResponse, EmbeddingRequest, EmbeddingResponse } from "./interfaces";
+import {
+  ILLMProvider,
+  IEmbeddingProvider,
+  GenerationRequest,
+  GenerationResponse,
+  EmbeddingRequest,
+  EmbeddingResponse,
+} from "./interfaces";
+import { GoogleGenAIManager } from "./GoogleGenAIManager";
 
-const PROJECT_ID = process.env.GCP_PROJECT_ID;
-const LOCATION = process.env.GCP_LOCATION || "us-central1";
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const EMBEDDING_MODEL = "text-embedding-004";
 const GENERATIVE_MODEL_ID = "gemini-2.0-flash-001";
 
-if (!PROJECT_ID) {
-  throw new Error(
-    "Faltan variables de entorno críticas. Revisa tu archivo .env (se necesita GCP_PROJECT_ID)."
-  );
-}
-
-if (!GEMINI_API_KEY) {
-  console.warn("GEMINI_API_KEY no está configurada. Algunas funcionalidades pueden no funcionar correctamente.");
-}
-
-const ai = new GoogleGenAI({
-  vertexai: true,
-  project: PROJECT_ID,
-  location: LOCATION || "us-central1",
-});
-
-export async function getEmbedding(text: string) {
+/**
+ * Genera embedding usando GoogleGenAI del centro especificado
+ * @param text Texto para generar embedding
+ * @param centerId ID del centro (default, cucuta)
+ * @returns Vector de embedding
+ */
+export async function getEmbedding(text: string, centerId: string = 'default') {
   try {
+    const ai = GoogleGenAIManager.getInstance(centerId);
     const response = await ai.models.embedContent({
       model: EMBEDDING_MODEL,
       contents: [text],
@@ -34,12 +30,19 @@ export async function getEmbedding(text: string) {
     }
     return response.embeddings[0].values; // Retorna el primer embedding
   } catch (error) {
-    console.error("Error generando embedding:", error);
+    console.error(`Error generando embedding para centro ${centerId}:`, error);
     throw new Error("Error al generar embedding del texto");
   }
 }
 
-export const aiGenerateContent = async (prompt: string): Promise<string> => {
+/**
+ * Genera contenido usando GoogleGenAI del centro especificado
+ * @param prompt Prompt para generar contenido
+ * @param centerId ID del centro (default, cucuta)
+ * @returns Texto generado
+ */
+export const aiGenerateContent = async (prompt: string, centerId: string = 'default'): Promise<string> => {
+  const ai = GoogleGenAIManager.getInstance(centerId);
   const response = await ai.models.generateContent({
     model: GENERATIVE_MODEL_ID,
     contents: prompt,
@@ -56,9 +59,32 @@ export const aiGenerateContent = async (prompt: string): Promise<string> => {
   return response.text;
 };
 
-// Provider class implementation (future use)
+/**
+ * Provider class para GoogleGenAI con soporte multi-tenant
+ */
 export class GoogleGenAIProvider implements ILLMProvider {
-  async generateContent(request: GenerationRequest): Promise<GenerationResponse> {
+  private centerId: string;
+
+  constructor(centerId: string = 'default') {
+    this.centerId = centerId;
+  }
+
+  /**
+   * Cambia el centro activo para este provider
+   * @param centerId Nuevo centro a usar
+   */
+  setCenterId(centerId: string): void {
+    this.centerId = centerId;
+  }
+
+  /**
+   * Genera contenido usando la instancia GoogleGenAI del centro configurado
+   */
+  async generateContent(
+    request: GenerationRequest
+  ): Promise<GenerationResponse> {
+    const ai = GoogleGenAIManager.getInstance(this.centerId);
+    
     const generateConfig: any = {
       model: GENERATIVE_MODEL_ID,
       contents: request.prompt,
@@ -68,32 +94,36 @@ export class GoogleGenAIProvider implements ILLMProvider {
         topK: request.config?.topK || 40,
         topP: request.config?.topP || 0.95,
         // Agregar herramientas si están presentes
-        ...(request.tools && request.tools.length > 0 && { tools: request.tools }),
-        ...(request.toolConfig && { toolConfig: request.toolConfig })
+        ...(request.tools &&
+          request.tools.length > 0 && { tools: request.tools }),
+        ...(request.toolConfig && { toolConfig: request.toolConfig }),
       },
     };
 
     const response = await ai.models.generateContent(generateConfig);
-    
-    console.log('DEBUG GoogleGenAIProvider: Response raw:', {
+
+    console.log(`DEBUG GoogleGenAIProvider (${this.centerId}): Response raw:`, {
       hasText: !!response?.text,
       hasFunctionCalls: !!response?.functionCalls,
       functionCallsLength: response?.functionCalls?.length || 0,
-      functionCallsRaw: response?.functionCalls
+      functionCallsRaw: response?.functionCalls,
     });
-    
+
     if (!response || (!response.text && !response.functionCalls)) {
       throw new Error("No se generó contenido.");
     }
-    
+
     return {
       text: response.text || "",
-      functionCalls: response.functionCalls || []
+      functionCalls: response.functionCalls || [],
     };
   }
 
+  /**
+   * Genera embedding usando la instancia GoogleGenAI del centro configurado
+   */
   async getEmbedding(request: EmbeddingRequest): Promise<EmbeddingResponse> {
-    const values = await getEmbedding(request.text);
+    const values = await getEmbedding(request.text, this.centerId);
     return { values: values || [] };
   }
 }

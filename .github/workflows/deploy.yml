@@ -139,7 +139,7 @@ jobs:
           --cpu 1 \
           --min-instances 0 \
           --max-instances 2 \
-          --set-env-vars NODE_ENV=staging,GCP_PROJECT_ID=${{ env.PROJECT_ID }},GCP_LOCATION=${{ env.REGION }}
+          --set-env-vars NODE_ENV=staging,GCP_PROJECT_ID=${{ env.PROJECT_ID }},GCP_LOCATION=${{ env.REGION }},VECTOR_SEARCH_INDEX_ENDPOINT_ID=${{ secrets.VECTOR_SEARCH_INDEX_ENDPOINT_ID }},VECTOR_SEARCH_DEPLOYED_INDEX_ID=${{ secrets.VECTOR_SEARCH_DEPLOYED_INDEX_ID }},GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }},GCP_SEARCH_LOCATION=${{ env.REGION }},GCP_DATA_STORE_ID=${{ secrets.GCP_DATA_STORE_ID }}
 
     - name: Run smoke tests
       run: |
@@ -183,7 +183,7 @@ jobs:
           --cpu 1 \
           --min-instances 0 \
           --max-instances 3 \
-          --set-env-vars NODE_ENV=production,GCP_PROJECT_ID=${{ env.PROJECT_ID }},GCP_LOCATION=${{ env.REGION }}
+          --set-env-vars NODE_ENV=production,GCP_PROJECT_ID=${{ env.PROJECT_ID }},GCP_LOCATION=${{ env.REGION }},VECTOR_SEARCH_INDEX_ENDPOINT_ID=${{ secrets.VECTOR_SEARCH_INDEX_ENDPOINT_ID }},VECTOR_SEARCH_DEPLOYED_INDEX_ID=${{ secrets.VECTOR_SEARCH_DEPLOYED_INDEX_ID }},GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }},GCP_SEARCH_LOCATION=${{ env.REGION }},GCP_DATA_STORE_ID=${{ secrets.GCP_DATA_STORE_ID }}
 
     - name: Run production smoke tests
       run: |

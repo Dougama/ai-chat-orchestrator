@@ -12,7 +12,6 @@ import { Firestore } from "@google-cloud/firestore";
 import { FunctionCallingConfigMode } from "@google/genai";
 
 export class ConversationOrchestrator {
-  private static llmProvider = new GoogleGenAIProvider();
   private static mcpConnectionManager = new MCPConnectionManager();
   private static mcpAdapter = new MCPAdapter();
   private static mcpFallbackHandler = new MCPFallbackHandler();
@@ -52,7 +51,8 @@ export class ConversationOrchestrator {
     const augmentedPrompt = await RAGPipeline.executeRAGPipeline(
       firestore,
       request.prompt,
-      history
+      history,
+      centerId || 'bogota'
     );
 
     // 5. Preparamos herramientas MCP si tenemos centerId
@@ -83,6 +83,8 @@ export class ConversationOrchestrator {
     }
 
     // 6. Generamos la respuesta del asistente (con herramientas MCP si están disponibles)
+    const llmProvider = new GoogleGenAIProvider(centerId || 'default');
+    
     const generationConfig = {
       prompt: augmentedPrompt,
       ...(tools.length > 0 && {
@@ -98,7 +100,7 @@ export class ConversationOrchestrator {
 
     console.log('DEBUG: Configuración enviada a LLM:', JSON.stringify(generationConfig, null, 2));
     
-    const response = await this.llmProvider.generateContent(generationConfig);
+    const response = await llmProvider.generateContent(generationConfig);
     let assistantText = response.text || '';
 
     console.log('DEBUG: Respuesta LLM:', {
@@ -121,7 +123,8 @@ export class ConversationOrchestrator {
         const finalResponse = await this.generateFinalResponse(
           augmentedPrompt,
           functionCallResults,
-          tools
+          tools,
+          centerId || 'default'
         );
         assistantText = finalResponse.text || assistantText;
       }
@@ -224,8 +227,11 @@ export class ConversationOrchestrator {
   private static async generateFinalResponse(
     originalPrompt: string,
     functionCallResults: any[],
-    tools: any[]
+    tools: any[],
+    centerId: string
   ): Promise<any> {
+    const llmProvider = new GoogleGenAIProvider(centerId);
+    
     // Crear prompt enriquecido con resultados de herramientas
     const toolResultsText = functionCallResults
       .map(result => `Resultado de ${result.name}: ${JSON.stringify(result.response)}`)
@@ -240,7 +246,7 @@ export class ConversationOrchestrator {
       Incorpora estos resultados en tu respuesta de manera natural y útil para el usuario.
     `;
     
-    return await this.llmProvider.generateContent({
+    return await llmProvider.generateContent({
       prompt: enhancedPrompt,
       tools: tools.length > 0 ? [{ functionDeclarations: tools }] : undefined
     });
