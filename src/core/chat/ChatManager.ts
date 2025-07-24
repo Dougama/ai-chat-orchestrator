@@ -22,8 +22,7 @@ export class ChatManager {
 
     // Construimos la consulta base
     let query: FirebaseFirestore.Query = chatsCollection
-      // TODO: Descomentar cuando la autenticación esté implementada
-      // .where('userId', '==', userId)
+      .where('userId', '==', userId)
       .orderBy("lastUpdatedAt", "desc"); // Siempre ordenamos por el más reciente
 
     // Si nos proporcionan un cursor (el timestamp del último chat visto),
@@ -49,12 +48,17 @@ export class ChatManager {
   /**
    * Crea un nuevo chat
    */
-  static async createChat(firestore: Firestore, title: string): Promise<string> {
+  static async createChat(firestore: Firestore, title: string, userId: string): Promise<string> {
+    console.log(`🔍 DEBUG ChatManager - Creating chat with userId: ${userId}`);
     const chatsCollection = firestore.collection("chats");
-    const chatDocRef = await chatsCollection.add({
+    const chatDoc = {
       title: title.substring(0, 40) + "...",
+      userId: userId,
       createdAt: Timestamp.now(),
-    });
+    };
+    console.log(`🔍 DEBUG ChatManager - Chat document:`, chatDoc);
+    const chatDocRef = await chatsCollection.add(chatDoc);
+    console.log(`🔍 DEBUG ChatManager - Chat created with ID: ${chatDocRef.id}`);
     return chatDocRef.id;
   }
 
@@ -67,15 +71,31 @@ export class ChatManager {
   }
 
   /**
-   * Elimina un chat y todos sus mensajes
+   * Elimina un chat y todos sus mensajes (con validación de ownership)
    */
-  static async deleteUserChat(firestore: Firestore, chatId: string): Promise<void> {
-    console.log(`Eliminando chat con ID: ${chatId}`);
+  static async deleteUserChat(firestore: Firestore, chatId: string, userId?: string): Promise<void> {
+    console.log(`Eliminando chat con ID: ${chatId} para usuario: ${userId}`);
+    
     const chatDocRef = firestore.collection("chats").doc(chatId);
+    
+    // Si se proporciona userId, validar ownership
+    if (userId) {
+      const chatDoc = await chatDocRef.get();
+      if (!chatDoc.exists) {
+        throw new Error(`Chat ${chatId} no existe`);
+      }
+      
+      const chatData = chatDoc.data();
+      if (chatData?.userId !== userId) {
+        throw new Error(`Usuario ${userId} no tiene permisos para eliminar el chat ${chatId}`);
+      }
+    }
+    
     // Primero, eliminar la subcolección de mensajes
     await this.deleteCollection(firestore, `chats/${chatId}/messages`, 50);
     // Luego, eliminar el documento principal del chat
     await chatDocRef.delete();
+    console.log(`✅ Chat ${chatId} eliminado correctamente`);
   }
 
   /**

@@ -11,11 +11,12 @@ import {
 
 const router = Router();
 
-// Chat endpoints
-router.post("/:chatId?", postChatMessage);
-router.delete("/:chatId", deleteChat);
-router.get("/user/:userId", getUserChats);
-router.get("/:chatId/messages", getChatMessages);
+// Chat endpoints con userId en path para ownership validation
+router.post("/users/:userId", postChatMessage); // Crear nuevo chat
+router.post("/users/:userId/chats/:chatId", postChatMessage); // Continuar chat existente
+router.delete("/users/:userId/chats/:chatId", deleteChat); // Eliminar chat
+router.get("/users/:userId", getUserChats); // Listar chats del usuario
+router.get("/users/:userId/chats/:chatId/messages", getChatMessages); // Mensajes del chat
 
 // Multi-tenant health check
 router.get("/health/multitenant", getMultiTenantHealth);

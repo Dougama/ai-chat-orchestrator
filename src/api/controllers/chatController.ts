@@ -28,12 +28,22 @@ const initializeMultiTenant = async () => {
  * Extrae el contexto del usuario desde el request
  */
 const extractUserContext = (req: Request): UserContext => {
-  // Por ahora implementación básica, se puede expandir
+  // Prioridad: 1) URL params, 2) body, 3) query params
   return {
-    userId: req.body.userId || req.query.userId || 'anonymous',
+    userId: req.params.userId || req.body.userId || req.query.userId || 'anonymous',
     centerId: req.headers['x-center-id'] as string || req.query.center as string,
     // Futuro: extraer de JWT, geolocalización, etc.
   };
+};
+
+/**
+ * Valida que el usuario del path coincida con el contexto del request
+ */
+const validateUserOwnership = (pathUserId: string, contextUserId: string): boolean => {
+  if (pathUserId !== contextUserId && contextUserId !== 'anonymous') {
+    return false;
+  }
+  return true;
 };
 
 export const postChatMessage = async (
@@ -52,6 +62,15 @@ export const postChatMessage = async (
 
     // Extraer contexto del usuario
     const userContext = extractUserContext(req);
+    const pathUserId = req.params.userId;
+    
+    // Validar ownership del usuario
+    if (!validateUserOwnership(pathUserId, userContext.userId)) {
+      res.status(403).json({ error: 'No tienes permisos para acceder a este recurso.' });
+      return;
+    }
+    
+    console.log(`🔍 DEBUG chatController - pathUserId: ${pathUserId}, contextUserId: ${userContext.userId}`);
     
     // Enriquecer request con centerContext
     const enrichedRequest = await multiTenantManager.handleRequest(req, userContext);
@@ -61,6 +80,7 @@ export const postChatMessage = async (
       prompt,
       chatId,
       history,
+      userId: pathUserId, // ✅ Usar userId del path (validado)
       centerContext: enrichedRequest.centerContext, // ✅ Agregar centerContext
     });
     
@@ -83,19 +103,23 @@ export const getUserChats = async (
     // Inicializar multi-tenant si no está listo
     await initializeMultiTenant();
 
-    const { userId } = req.params;
+    const pathUserId = req.params.userId;
     // Leemos el cursor 'lastSeen' de los query params de la URL
-    // ej: /chat/user/user123?lastSeen=1718361...
     const { lastSeen } = req.query;
 
     // Extraer contexto del usuario
     const userContext = extractUserContext(req);
-    userContext.userId = userId; // Usar userId del parámetro
+    
+    // Validar ownership del usuario
+    if (!validateUserOwnership(pathUserId, userContext.userId)) {
+      res.status(403).json({ error: 'No tienes permisos para acceder a este recurso.' });
+      return;
+    }
     
     // Enriquecer request con centerContext
     const enrichedRequest = await multiTenantManager.handleRequest(req, userContext);
 
-    const chats = await listUserChats(userId, lastSeen as string | undefined, enrichedRequest.centerContext);
+    const chats = await listUserChats(pathUserId, lastSeen as string | undefined, enrichedRequest.centerContext);
     res.status(200).json(chats);
   } catch (error) {
     console.error("Error al obtener los chats del usuario:", error);
@@ -112,10 +136,16 @@ export const getChatMessages = async (
     // Inicializar multi-tenant si no está listo
     await initializeMultiTenant();
 
-    const { chatId } = req.params;
+    const { chatId, userId: pathUserId } = req.params;
     
     // Extraer contexto del usuario
     const userContext = extractUserContext(req);
+    
+    // Validar ownership del usuario
+    if (!validateUserOwnership(pathUserId, userContext.userId)) {
+      res.status(403).json({ error: 'No tienes permisos para acceder a este recurso.' });
+      return;
+    }
     
     // Enriquecer request con centerContext
     const enrichedRequest = await multiTenantManager.handleRequest(req, userContext);
@@ -136,15 +166,21 @@ export const deleteChat = async (
     // Inicializar multi-tenant si no está listo
     await initializeMultiTenant();
 
-    const { chatId } = req.params;
+    const { chatId, userId: pathUserId } = req.params;
     
     // Extraer contexto del usuario
     const userContext = extractUserContext(req);
     
+    // Validar ownership del usuario
+    if (!validateUserOwnership(pathUserId, userContext.userId)) {
+      res.status(403).json({ error: 'No tienes permisos para acceder a este recurso.' });
+      return;
+    }
+    
     // Enriquecer request con centerContext
     const enrichedRequest = await multiTenantManager.handleRequest(req, userContext);
 
-    await deleteUserChat(chatId, enrichedRequest.centerContext);
+    await deleteUserChat(chatId, pathUserId, enrichedRequest.centerContext);
     res.status(204).send();
   } catch (error) {
     console.error("Error al eliminar el chat:", error);

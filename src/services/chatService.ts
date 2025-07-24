@@ -13,6 +13,7 @@ interface ChatRequest {
   prompt: string;
   history: ChatMessage[];
   chatId?: string;
+  userId?: string;
   centerContext?: {
     centerId: string;
     firestore: Firestore;
@@ -34,6 +35,7 @@ export const handleChatPrompt = async (
   const centerId = request.centerContext?.centerId || 'default';
   
   console.log(`💬 HandleChatPrompt: Usando centro ${centerId}`);
+  console.log(`🔍 DEBUG chatService - request.userId:`, request.userId);
   
   return await ConversationOrchestrator.handleChatPrompt(firestore, request, centerId);
 };
@@ -65,12 +67,13 @@ export const getMessagesForChat = async (
 
 export const deleteUserChat = async (
   chatId: string,
+  userId: string,
   centerContext?: CenterContext
 ): Promise<void> => {
   // Usar centerContext si está disponible, sino fallback
   const firestore = centerContext?.firestore || fallbackFirestore;
   
-  console.log(`🗑️ DeleteUserChat: Usando centro ${centerContext?.centerId || 'fallback'}`);
+  console.log(`🗑️ DeleteUserChat: Usando centro ${centerContext?.centerId || 'fallback'} para usuario ${userId}`);
   
-  return await ChatManager.deleteUserChat(firestore, chatId);
+  return await ChatManager.deleteUserChat(firestore, chatId, userId);
 };

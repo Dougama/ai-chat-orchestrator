@@ -1,0 +1,616 @@
+openapi: 3.0.3
+info:
+  title: AI Chat Orchestrator API
+  description: API para el orquestador de chat con IA multi-tenant con soporte RAG y MCP
+  version: 2.0.0
+  contact:
+    name: AI Chat Orchestrator Team
+servers:
+  - url: http://localhost:8080
+    description: Servidor de desarrollo
+  - url: https://your-production-domain.com
+    description: Servidor de producción
+
+paths:
+  /chat/users/{userId}:
+    post:
+      summary: Crear nuevo chat para usuario
+      description: Envía un mensaje y crea un nuevo chat para el usuario especificado
+      operationId: createChatForUser
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          description: ID del usuario propietario del chat
+          schema:
+            type: string
+            example: "user123"
+        - name: X-Center-Id
+          in: header
+          description: ID del centro de distribución (opcional)
+          schema:
+            type: string
+            enum: [default, cucuta]
+            example: cucuta
+        - name: center
+          in: query
+          description: Centro de distribución alternativo via query param
+          schema:
+            type: string
+            enum: [default, cucuta]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatRequest'
+            examples:
+              nuevo_chat:
+                summary: Crear nuevo chat
+                value:
+                  prompt: "Quiero reportar una incidencia en mi entrega"
+                  history: []
+      responses:
+        '200':
+          description: Respuesta del asistente de IA
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatResponse'
+        '400':
+          description: Error de validación
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: No tienes permisos para acceder a este recurso
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Error interno del servidor
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    get:
+      summary: Obtener chats de usuario
+      description: Lista los chats de un usuario específico con paginación
+      operationId: getUserChats
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          description: ID del usuario
+          schema:
+            type: string
+            example: "user123"
+        - name: lastSeen
+          in: query
+          description: Timestamp del último chat visto para paginación
+          schema:
+            type: string
+            example: "1718361234567"
+        - name: center
+          in: query
+          description: Centro de distribución via query param
+          schema:
+            type: string
+            enum: [default, cucuta]
+        - name: X-Center-Id
+          in: header
+          description: ID del centro de distribución
+          schema:
+            type: string
+            enum: [default, cucuta]
+      responses:
+        '200':
+          description: Lista de chats del usuario
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Chat'
+        '403':
+          description: No tienes permisos para acceder a este recurso
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Usuario no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Error interno del servidor
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /chat/users/{userId}/chats/{chatId}:
+    post:
+      summary: Enviar mensaje a chat específico del usuario
+      description: Envía un mensaje a un chat existente del usuario identificado por chatId
+      operationId: sendMessageToUserChat
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          description: ID del usuario propietario del chat
+          schema:
+            type: string
+            example: "user123"
+        - name: chatId
+          in: path
+          required: true
+          description: ID del chat existente
+          schema:
+            type: string
+            example: "abc123def456"
+        - name: center
+          in: query
+          description: Centro de distribución via query param
+          schema:
+            type: string
+            enum: [default, cucuta]
+        - name: X-Center-Id
+          in: header
+          description: ID del centro de distribución
+          schema:
+            type: string
+            enum: [default, cucuta]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatRequest'
+      responses:
+        '200':
+          description: Respuesta del asistente de IA
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatResponse'
+        '400':
+          description: Error de validación
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: No tienes permisos para acceder a este recurso
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Chat no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Error interno del servidor
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    delete:
+      summary: Eliminar chat del usuario
+      description: Elimina un chat del usuario y todos sus mensajes
+      operationId: deleteUserChat
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          description: ID del usuario propietario del chat
+          schema:
+            type: string
+            example: "user123"
+        - name: chatId
+          in: path
+          required: true
+          description: ID del chat a eliminar
+          schema:
+            type: string
+            example: "abc123def456"
+        - name: center
+          in: query
+          description: Centro de distribución via query param
+          schema:
+            type: string
+            enum: [default, cucuta]
+        - name: X-Center-Id
+          in: header
+          description: ID del centro de distribución
+          schema:
+            type: string
+            enum: [default, cucuta]
+      responses:
+        '204':
+          description: Chat eliminado exitosamente
+        '403':
+          description: No tienes permisos para acceder a este recurso
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Chat no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Error interno del servidor
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /chat/users/{userId}/chats/{chatId}/messages:
+    get:
+      summary: Obtener mensajes de chat del usuario
+      description: Obtiene todos los mensajes de un chat específico del usuario
+      operationId: getUserChatMessages
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          description: ID del usuario propietario del chat
+          schema:
+            type: string
+            example: "user123"
+        - name: chatId
+          in: path
+          required: true
+          description: ID del chat
+          schema:
+            type: string
+            example: "abc123def456"
+        - name: center
+          in: query
+          description: Centro de distribución via query param
+          schema:
+            type: string
+            enum: [default, cucuta]
+        - name: X-Center-Id
+          in: header
+          description: ID del centro de distribución
+          schema:
+            type: string
+            enum: [default, cucuta]
+      responses:
+        '200':
+          description: Lista de mensajes del chat
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Message'
+        '403':
+          description: No tienes permisos para acceder a este recurso
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Chat no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Error interno del servidor
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /chat/health/multitenant:
+    get:
+      summary: Health check del sistema multi-tenant
+      description: Verifica el estado de todos los centros y servicios
+      operationId: getMultiTenantHealth
+      responses:
+        '200':
+          description: Estado del sistema multi-tenant
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        '500':
+          description: Error interno del servidor
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Sistema no disponible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnhealthyResponse'
+
+components:
+  schemas:
+    ChatRequest:
+      type: object
+      required:
+        - prompt
+      properties:
+        prompt:
+          type: string
+          description: Mensaje del usuario
+          example: "Quiero reportar una incidencia en mi entrega"
+        history:
+          type: array
+          description: Historial de mensajes previos
+          items:
+            $ref: '#/components/schemas/ChatMessage'
+          default: []
+
+    ChatMessage:
+      type: object
+      required:
+        - id
+        - role
+        - content
+        - timestamp
+      properties:
+        id:
+          type: string
+          description: ID único del mensaje
+          example: "msg123abc"
+        role:
+          type: string
+          enum: [user, assistant, system]
+          description: Rol del emisor del mensaje
+          example: "user"
+        content:
+          type: string
+          description: Contenido del mensaje
+          example: "Quiero reportar una incidencia"
+        timestamp:
+          type: string
+          format: date-time
+          description: Timestamp del mensaje
+          example: "2025-07-24T11:45:37.417Z"
+
+    ChatResponse:
+      type: object
+      required:
+        - id
+        - role
+        - content
+        - timestamp
+        - chatId
+      properties:
+        id:
+          type: string
+          description: ID único de la respuesta
+          example: "Ae8r1n65wpRLZ8TdaWzR"
+        role:
+          type: string
+          enum: [assistant]
+          description: Siempre 'assistant' para respuestas
+          example: "assistant"
+        content:
+          type: string
+          description: Respuesta del asistente de IA
+          example: "¡Perfecto! Te ayudo a reportar la incidencia..."
+        timestamp:
+          type: string
+          format: date-time
+          description: Timestamp de la respuesta
+          example: "2025-07-24T11:45:37.417Z"
+        chatId:
+          type: string
+          description: ID del chat (nuevo o existente)
+          example: "W0PLxuyCGAtV7lHUlVYQ"
+        data:
+          type: object
+          description: Datos estructurados adicionales de herramientas MCP
+          properties:
+            compensationData:
+              type: object
+              description: Datos de compensación
+            rendimientosData:
+              type: object
+              description: Datos de rendimientos
+            novedadesData:
+              type: object
+              description: Datos de novedades
+              properties:
+                novedades:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/Novedad'
+                totalCount:
+                  type: integer
+                returnedCount:
+                  type: integer
+            novedadCreatedData:
+              type: object
+              description: Datos de novedad creada
+              properties:
+                success:
+                  type: boolean
+                message:
+                  type: string
+                novedadId:
+                  type: string
+                cod_cliente:
+                  type: string
+
+    Chat:
+      type: object
+      required:
+        - id
+        - title
+        - userId
+        - createdAt
+      properties:
+        id:
+          type: string
+          description: ID único del chat
+          example: "abc123def456"
+        title:
+          type: string
+          description: Título del chat (primeras palabras del prompt)
+          example: "Quiero reportar una incidencia..."
+        userId:
+          type: string
+          description: ID del usuario propietario
+          example: "user123"
+        createdAt:
+          type: string
+          format: date-time
+          description: Fecha de creación
+          example: "2025-07-24T11:35:33.618Z"
+        lastUpdatedAt:
+          type: string
+          format: date-time
+          description: Fecha de última actualización
+          example: "2025-07-24T11:41:11.192Z"
+
+    Message:
+      type: object
+      required:
+        - role
+        - content
+        - timestamp
+      properties:
+        role:
+          type: string
+          enum: [user, assistant]
+          description: Rol del emisor
+          example: "user"
+        content:
+          type: string
+          description: Contenido del mensaje
+          example: "Hola, necesito ayuda"
+        timestamp:
+          type: string
+          format: date-time
+          description: Timestamp del mensaje
+          example: "2025-07-24T11:35:33.618Z"
+
+    Novedad:
+      type: object
+      properties:
+        id:
+          type: string
+          description: ID de la novedad
+          example: "0ca0JI8TiWr2fyAUxzVQ"
+        cod_cliente:
+          type: string
+          description: Código del cliente
+          example: "12345"
+        cajas:
+          type: string
+          description: Descripción de cajas afectadas
+          example: "ejemplo"
+        detalle:
+          type: string
+          description: Detalle de la incidencia
+          example: "Detalle de la incidencia"
+        razon:
+          type: string
+          description: Razón de la novedad
+          example: "Cliente Grosero"
+        estado:
+          type: string
+          description: Estado de la novedad
+          example: "Abierto"
+        created_at:
+          type: string
+          format: date-time
+          description: Fecha de creación
+          example: "2025-07-24T11:35:39.765Z"
+        evidenciaUrl:
+          type: string
+          format: uri
+          description: URL de evidencia (opcional)
+          example: "https://storage.cloud.google.com/data_files_workstation/novedades/evidencias/..."
+
+    HealthResponse:
+      type: object
+      required:
+        - status
+        - timestamp
+        - centers
+        - googleGenAI
+        - availableCenters
+      properties:
+        status:
+          type: string
+          enum: [healthy, degraded]
+          description: Estado general del sistema
+          example: "healthy"
+        timestamp:
+          type: string
+          format: date-time
+          description: Timestamp del health check
+          example: "2025-07-24T11:45:37.417Z"
+        centers:
+          type: object
+          description: Estado de cada centro
+          additionalProperties:
+            type: boolean
+          example:
+            default: true
+            cucuta: true
+        googleGenAI:
+          type: object
+          description: Estado de instancias GoogleGenAI
+          additionalProperties:
+            type: boolean
+          example:
+            default: true
+            cucuta: true
+        availableCenters:
+          type: array
+          items:
+            type: string
+          description: Lista de centros disponibles
+          example: ["default", "cucuta"]
+
+    UnhealthyResponse:
+      type: object
+      required:
+        - status
+        - timestamp
+        - error
+      properties:
+        status:
+          type: string
+          enum: [unhealthy]
+          example: "unhealthy"
+        timestamp:
+          type: string
+          format: date-time
+          example: "2025-07-24T11:45:37.417Z"
+        error:
+          type: string
+          example: "Multi-tenant system not available"
+
+    Error:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+          description: Mensaje de error
+          example: "El campo \"prompt\" es requerido."

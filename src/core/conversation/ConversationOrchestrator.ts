@@ -37,8 +37,9 @@ export class ConversationOrchestrator {
 
     // 1. Si no hay chatId, creamos una nueva conversación
     if (!chatId) {
-      chatId = await ChatManager.createChat(firestore, request.prompt);
-      console.log(`Nuevo chat creado con ID: ${chatId}`);
+      console.log(`🔍 DEBUG ConversationOrchestrator - request.userId:`, request.userId);
+      chatId = await ChatManager.createChat(firestore, request.prompt, request.userId || 'anonymous');
+      console.log(`Nuevo chat creado con ID: ${chatId} para userId: ${request.userId || 'anonymous'}`);
     }
 
     // 2. Guardamos el nuevo mensaje del usuario
