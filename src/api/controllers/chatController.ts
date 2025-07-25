@@ -1,6 +1,7 @@
 // packages/orchestrator-api/src/api/controllers/chatController.ts
 
 import { Request, Response } from "express";
+import { AuthenticatedRequest } from "../middleware/authMiddleware";
 import {
   deleteUserChat,
   getMessagesForChat,
@@ -26,29 +27,37 @@ const initializeMultiTenant = async () => {
 };
 
 /**
- * Extrae el contexto del usuario desde el request
+ * Extrae el contexto del usuario desde el request autenticado
  */
-const extractUserContext = (req: Request): UserContext => {
-  // Prioridad: 1) URL params, 2) body, 3) query params
+const extractUserContext = (req: AuthenticatedRequest): UserContext => {
+  // Si hay usuario autenticado, usar su información
+  if (req.user) {
+    return {
+      userId: req.user.uid,
+      centerId: req.headers['x-center-id'] as string || req.query.center as string || req.user.centerId,
+    };
+  }
+  
+  // Fallback para requests no autenticados (solo health check)
   return {
     userId: req.params.userId || req.body.userId || req.query.userId || 'anonymous',
     centerId: req.headers['x-center-id'] as string || req.query.center as string,
-    // Futuro: extraer de JWT, geolocalización, etc.
   };
 };
 
 /**
- * Valida que el usuario del path coincida con el contexto del request
+ * Valida que el usuario del path coincida con el usuario autenticado
+ * Ya validado en el middleware, pero se mantiene por seguridad adicional
  */
 const validateUserOwnership = (pathUserId: string, contextUserId: string): boolean => {
-  if (pathUserId !== contextUserId && contextUserId !== 'anonymous') {
+  if (pathUserId !== contextUserId) {
     return false;
   }
   return true;
 };
 
 export const postChatMessage = async (
-  req: Request,
+  req: AuthenticatedRequest,
   res: Response
 ): Promise<void> => {
   try {
@@ -65,11 +74,11 @@ export const postChatMessage = async (
     const userContext = extractUserContext(req);
     const pathUserId = req.params.userId;
     
-    // TODO: Validación de ownership comentada temporalmente
-    // if (!validateUserOwnership(pathUserId, userContext.userId)) {
-    //   res.status(403).json({ error: 'No tienes permisos para acceder a este recurso.' });
-    //   return;
-    // }
+    // Validación de ownership (ya validada en middleware, pero doble check)
+    if (!validateUserOwnership(pathUserId, userContext.userId)) {
+      res.status(403).json({ error: 'No tienes permisos para acceder a este recurso.' });
+      return;
+    }
     
     console.log(`🔍 DEBUG chatController - pathUserId: ${pathUserId}, contextUserId: ${userContext.userId}`);
     
@@ -97,7 +106,7 @@ export const postChatMessage = async (
 // en chatController.ts
 
 export const getUserChats = async (
-  req: Request,
+  req: AuthenticatedRequest,
   res: Response
 ): Promise<void> => {
   try {
@@ -130,7 +139,7 @@ export const getUserChats = async (
 
 // Nuevo controlador para obtener los mensajes de un chat
 export const getChatMessages = async (
-  req: Request,
+  req: AuthenticatedRequest,
   res: Response
 ): Promise<void> => {
   try {
@@ -160,7 +169,7 @@ export const getChatMessages = async (
 };
 
 export const deleteChat = async (
-  req: Request,
+  req: AuthenticatedRequest,
   res: Response
 ): Promise<void> => {
   try {

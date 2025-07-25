@@ -8,17 +8,18 @@ import {
   getUserChats,
   getMultiTenantHealth 
 } from "../controllers/chatController";
+import { authMiddleware, publicRoute } from "../middleware/authMiddleware";
 
 const router = Router();
 
-// Chat endpoints con userId en path para ownership validation
-router.post("/users/:userId", postChatMessage); // Crear nuevo chat
-router.post("/users/:userId/chats/:chatId", postChatMessage); // Continuar chat existente
-router.delete("/users/:userId/chats/:chatId", deleteChat); // Eliminar chat
-router.get("/users/:userId", getUserChats); // Listar chats del usuario
-router.get("/users/:userId/chats/:chatId/messages", getChatMessages); // Mensajes del chat
+// Chat endpoints con userId en path para ownership validation - REQUIEREN AUTENTICACIÓN
+router.post("/users/:userId", authMiddleware, postChatMessage); // Crear nuevo chat
+router.post("/users/:userId/chats/:chatId", authMiddleware, postChatMessage); // Continuar chat existente
+router.delete("/users/:userId/chats/:chatId", authMiddleware, deleteChat); // Eliminar chat
+router.get("/users/:userId", authMiddleware, getUserChats); // Listar chats del usuario
+router.get("/users/:userId/chats/:chatId/messages", authMiddleware, getChatMessages); // Mensajes del chat
 
-// Multi-tenant health check
-router.get("/health/multitenant", getMultiTenantHealth);
+// Multi-tenant health check - PÚBLICO
+router.get("/health/multitenant", publicRoute, getMultiTenantHealth);
 
 export default router;

@@ -20,12 +20,21 @@ info:
     El centro se determina en el siguiente orden de prioridad:
     1. Header `X-Center-Id` (máxima prioridad)
     2. Query parameter `center`
-    3. Fallback a centro `default`
+    3. Centro asociado al projectId del JWT token
+    4. Fallback a centro `default`
     
     ### Aislamiento de Datos:
     - Cada centro tiene sus propios chats y mensajes
     - Los embeddings se generan con el proyecto GCP del centro
     - No hay compartición de datos entre centros
+    
+  ## Autenticación
+  
+  La API utiliza Firebase Authentication con JWT tokens:
+  - El token debe enviarse en el header `Authorization: Bearer <token>`
+  - El `userId` del path debe coincidir con el `uid` del token
+  - El `projectId` del token se mapea automáticamente a un centro
+  - Solo el health check multi-tenant es público
   version: 2.0.0
   contact:
     name: AI Chat Orchestrator Team
@@ -34,6 +43,9 @@ servers:
     description: Servidor de desarrollo
   - url: https://ai-chat-orchestrator-614117709322.us-central1.run.app
     description: Servidor de producción Google Cloud Run
+
+security:
+  - firebaseAuth: []
 
 paths:
   /chat/users/{userId}:
@@ -83,6 +95,12 @@ paths:
                 $ref: '#/components/schemas/ChatResponse'
         '400':
           description: Error de validación
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Token de autenticación no proporcionado o inválido
           content:
             application/json:
               schema:
@@ -205,6 +223,12 @@ paths:
                 $ref: '#/components/schemas/ChatResponse'
         '400':
           description: Error de validación
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Token de autenticación no proporcionado o inválido
           content:
             application/json:
               schema:
@@ -346,6 +370,7 @@ paths:
       summary: Health check básico del servicio
       description: Verifica que el servicio esté operativo
       operationId: getHealth
+      security: []  # Endpoint público
       responses:
         '200':
           description: Servicio operativo
@@ -367,6 +392,7 @@ paths:
       summary: Health check del sistema multi-tenant
       description: Verifica el estado de todos los centros, servicios y configuraciones GoogleGenAI
       operationId: getMultiTenantHealth
+      security: []  # Endpoint público
       responses:
         '200':
           description: Estado del sistema multi-tenant
@@ -388,6 +414,22 @@ paths:
                 $ref: '#/components/schemas/UnhealthyResponse'
 
 components:
+  securitySchemes:
+    firebaseAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        JWT token de Firebase Authentication.
+        El token debe contener:
+        - `uid`: ID del usuario (debe coincidir con userId del path)
+        - `email`: Email del usuario (opcional)
+        - `firebase.tenant`: ProjectId que se mapea a un centro
+        
+        Mapeo de ProjectId a Centro:
+        - `backend-developer-446300` → `default`
+        - `bavaria-412804` → `cucuta`
+        
   schemas:
     ChatRequest:
       type: object
