@@ -141,6 +141,12 @@ jobs:
           --max-instances 2 \
           --set-env-vars NODE_ENV=staging,GCP_PROJECT_ID=${{ env.PROJECT_ID }},GCP_LOCATION=${{ env.REGION }}
 
+    - name: Update traffic to latest revision
+      run: |
+        gcloud run services update-traffic ${{ env.SERVICE_NAME }}-staging \
+          --region ${{ env.REGION }} \
+          --to-latest
+
     - name: Run smoke tests
       run: |
         SERVICE_URL=$(gcloud run services describe ${{ env.SERVICE_NAME }}-staging --region ${{ env.REGION }} --format 'value(status.url)')
@@ -184,6 +190,12 @@ jobs:
           --min-instances 0 \
           --max-instances 3 \
           --set-env-vars NODE_ENV=production,GCP_PROJECT_ID=${{ env.PROJECT_ID }},GCP_LOCATION=${{ env.REGION }}
+
+    - name: Update traffic to latest revision
+      run: |
+        gcloud run services update-traffic ${{ env.SERVICE_NAME }} \
+          --region ${{ env.REGION }} \
+          --to-latest
 
     - name: Run production smoke tests
       run: |
