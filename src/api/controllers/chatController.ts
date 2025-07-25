@@ -8,6 +8,7 @@ import {
   listUserChats,
 } from "../../services/chatService";
 import { MultiTenantManager } from "../../core/multitenant/MultiTenantManager";
+import { GoogleGenAIManager } from "../../core/llm/GoogleGenAIManager";
 import { UserContext } from "../../core/multitenant/interfaces";
 
 // Singleton MultiTenantManager - se inicializa una vez
@@ -202,14 +203,20 @@ export const getMultiTenantHealth = async (
     // Verificar estado de todos los centros
     const centerHealth = await multiTenantManager.healthCheck();
     
-    // GoogleGenAI usa instancia global simple - siempre disponible
-    const genAIHealth = { "local": true };
+    // Verificar estado de GoogleGenAI por centro
+    const genAIHealth = await GoogleGenAIManager.healthCheck();
+    
+    // Obtener configuración de GoogleGenAI
+    const genAIConfig = GoogleGenAIManager.getConfiguration();
 
     const overallHealth = {
       status: "healthy",
       timestamp: new Date().toISOString(),
       centers: centerHealth,
-      googleGenAI: genAIHealth,
+      googleGenAI: {
+        health: genAIHealth,
+        configuration: genAIConfig
+      },
       availableCenters: multiTenantManager.getAvailableCenters(),
     };
 

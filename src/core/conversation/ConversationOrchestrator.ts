@@ -3,7 +3,7 @@ import { ChatRequest, ChatWithMessages } from "../chat/interfaces";
 import { ChatManager } from "../chat/ChatManager";
 import { MessageManager } from "../chat/MessageManager";
 import { RAGPipeline } from "../rag/RAGPipeline";
-import { GoogleGenAIProvider } from "../llm/GoogleGenAIProvider";
+import { GoogleGenAIManager } from "../llm/GoogleGenAIManager";
 import { MCPConnectionManager } from "../mcp/MCPConnectionManager";
 import { MCPAdapter } from "../mcp/MCPAdapter";
 import { MCPFallbackHandler } from "../mcp/MCPFallbackHandler";
@@ -111,7 +111,7 @@ export class ConversationOrchestrator {
     }
 
     // 6. Generamos la respuesta del asistente (con herramientas MCP si están disponibles)
-    const llmProvider = new GoogleGenAIProvider();
+    const llmProvider = GoogleGenAIManager.getProvider(centerId || 'default');
 
     const generationConfig = {
       prompt: augmentedPrompt,
@@ -283,7 +283,7 @@ export class ConversationOrchestrator {
     tools: any[],
     centerId: string
   ): Promise<any> {
-    const llmProvider = new GoogleGenAIProvider();
+    const llmProvider = GoogleGenAIManager.getProvider(centerId);
 
     // Crear prompt enriquecido con resultados de herramientas
     const toolResultsText = functionCallResults
