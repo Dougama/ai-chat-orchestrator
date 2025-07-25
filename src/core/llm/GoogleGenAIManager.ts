@@ -23,11 +23,8 @@ export class GoogleGenAIManager {
       const aiInstance = new GoogleGenAI({
         vertexai: true,
         project: centerConfig.gcpProject.projectId,
-        location: centerConfig.gcpProject.location,
-        // Si el centro tiene service account específico
-        ...(centerConfig.gcpProject.serviceAccountPath && {
-          keyFilename: centerConfig.gcpProject.serviceAccountPath
-        })
+        location: centerConfig.gcpProject.location
+        // ADC (Application Default Credentials) maneja auth cross-project
       });
 
       this.instances.set(centerId, aiInstance);
