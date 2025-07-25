@@ -202,9 +202,8 @@ export const getMultiTenantHealth = async (
     // Verificar estado de todos los centros
     const centerHealth = await multiTenantManager.healthCheck();
     
-    // Verificar GoogleGenAI singletons
-    const { GoogleGenAIManager } = await import("../../core/llm/GoogleGenAIManager");
-    const genAIHealth = await GoogleGenAIManager.healthCheck();
+    // GoogleGenAI usa instancia global simple - siempre disponible
+    const genAIHealth = { "local": true };
 
     const overallHealth = {
       status: "healthy",

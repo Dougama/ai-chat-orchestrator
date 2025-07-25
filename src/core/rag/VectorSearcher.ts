@@ -13,13 +13,13 @@ const FIRESTORE_COLLECTION = "pdf_documents_vector";
  */
 async function generateQueryEmbedding(queryText: string, centerId: string): Promise<number[]> {
   try {
-    const embedding = await getEmbedding(queryText, centerId);
+    const embedding = await getEmbedding(queryText);
     if (!embedding || embedding.length === 0) {
       throw new Error("No se generó embedding válido");
     }
     return embedding;
   } catch (error: any) {
-    throw new Error(`Error generando embedding de consulta para centro ${centerId}: ${error.message}`);
+    throw new Error(`Error generando embedding de consulta: ${error.message}`);
   }
 }
 

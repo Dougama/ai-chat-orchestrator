@@ -111,7 +111,7 @@ export class ConversationOrchestrator {
     }
 
     // 6. Generamos la respuesta del asistente (con herramientas MCP si están disponibles)
-    const llmProvider = new GoogleGenAIProvider(centerId || "default");
+    const llmProvider = new GoogleGenAIProvider();
 
     const generationConfig = {
       prompt: augmentedPrompt,
@@ -283,7 +283,7 @@ export class ConversationOrchestrator {
     tools: any[],
     centerId: string
   ): Promise<any> {
-    const llmProvider = new GoogleGenAIProvider(centerId);
+    const llmProvider = new GoogleGenAIProvider();
 
     // Crear prompt enriquecido con resultados de herramientas
     const toolResultsText = functionCallResults
