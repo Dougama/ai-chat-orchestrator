@@ -4,6 +4,7 @@ export interface ChatRequest {
   prompt: string;
   history: ChatMessage[];
   chatId?: string;
+  userId?: string;
 }
 
 export interface ChatData {

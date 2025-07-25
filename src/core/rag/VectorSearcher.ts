@@ -1,21 +1,23 @@
 import { Firestore, FieldValue } from "@google-cloud/firestore";
 import { SearchResult, VectorDocument } from "../../types";
-import { GoogleGenAIProvider } from "../llm/GoogleGenAIProvider";
+import { getEmbedding } from "../llm/GoogleGenAIProvider";
 
 const FIRESTORE_COLLECTION = "pdf_documents_vector";
-const embeddingProvider = new GoogleGenAIProvider();
-
 // Firestore dinámico - se pasa desde el contexto del centro
 
 /**
- * Genera embedding para una consulta
+ * Genera embedding para una consulta usando el centro especificado
  * @param queryText Texto de la consulta
+ * @param centerId ID del centro
  * @returns Embedding de la consulta
  */
-async function generateQueryEmbedding(queryText: string): Promise<number[]> {
+async function generateQueryEmbedding(queryText: string, centerId: string): Promise<number[]> {
   try {
-    const response = await embeddingProvider.getEmbedding({ text: queryText });
-    return response.values;
+    const embedding = await getEmbedding(queryText);
+    if (!embedding || embedding.length === 0) {
+      throw new Error("No se generó embedding válido");
+    }
+    return embedding;
   } catch (error: any) {
     throw new Error(`Error generando embedding de consulta: ${error.message}`);
   }
@@ -25,6 +27,7 @@ async function generateQueryEmbedding(queryText: string): Promise<number[]> {
  * Realiza búsqueda semántica usando Firestore Vector Search
  * @param firestore Instancia de Firestore del centro
  * @param queryText Texto de búsqueda
+ * @param centerId ID del centro para embedding
  * @param topK Número de resultados
  * @param collectionName Nombre de la colección
  * @param documentFilter Filtro por documento
@@ -33,13 +36,14 @@ async function generateQueryEmbedding(queryText: string): Promise<number[]> {
 export async function searchSimilarEmbeddingsVector(
   firestore: Firestore,
   queryText: string,
+  centerId: string,
   topK: number = 3,
   collectionName: string = FIRESTORE_COLLECTION,
   documentFilter?: string
 ): Promise<SearchResult[]> {
   try {
-    console.log("🔍 Generando embedding de consulta...");
-    const queryEmbedding = await generateQueryEmbedding(queryText);
+    console.log(`🔍 Generando embedding de consulta para centro ${centerId}...`);
+    const queryEmbedding = await generateQueryEmbedding(queryText, centerId);
 
     console.log("📥 Realizando búsqueda vectorial en Firestore...");
     let collection = firestore.collection(collectionName);

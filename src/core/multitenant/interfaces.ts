@@ -36,7 +36,7 @@ export interface CenterConfig {
 
 export interface UserContext {
   userId: string;
-  centerId: string;
+  centerId?: string;               // Opcional - se puede determinar automáticamente
   sessionId?: string;
   metadata?: Record<string, any>;
 }

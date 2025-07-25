@@ -1,21 +1,47 @@
 import { CenterConfig } from "./interfaces";
 
 export const CENTERS_CONFIG: Record<string, CenterConfig> = {
-  bogota: {
-    id: "bogota",
-    name: "Centro Bogotá",
+  default: {
+    id: "default",
+    name: "Centro Default (Backend)",
     region: "co-central",
     gcpProject: {
-      projectId: "logistica-bogota",
+      projectId: "backend-developer-446300",
       location: "us-central1",
-      serviceAccountPath: process.env.GCP_SA_BOGOTA_PATH,
+      // Sin serviceAccountPath - usa credenciales por defecto del orchestrator
     },
     firestore: {
       chatsCollection: "chats",
       vectorCollection: "pdf_documents_vector",
     },
     mcp: {
-      serverUrl: process.env.MCP_BOGOTA_URL || "https://mcp-bogota.run.app",
+      serverUrl: process.env.MCP_DEFAULT_URL || "https://mcp-default.run.app",
+      isEnabled: false, // MCP deshabilitado en default
+      fallbackEnabled: true,
+    },
+    billing: {
+      enabled: false, // Sin límites en default
+      maxChatsPerDay: 10000,
+      maxTokensPerMonth: 1000000,
+    },
+    status: "active",
+  },
+  
+  cucuta: {
+    id: "cucuta",
+    name: "Centro Bavaria Cúcuta", 
+    region: "co-northeast",
+    gcpProject: {
+      projectId: "bavaria-412804",
+      location: "us-central1",
+      // Sin serviceAccountPath - usa credenciales por defecto del orchestrator
+    },
+    firestore: {
+      chatsCollection: "chats",
+      vectorCollection: "pdf_documents_vector",
+    },
+    mcp: {
+      serverUrl: process.env.MCP_BAVARIA_URL || "https://cd-cucuta-service-280914661682.us-central1.run.app/api/mcp",
       isEnabled: true,
       fallbackEnabled: true,
     },
@@ -26,61 +52,9 @@ export const CENTERS_CONFIG: Record<string, CenterConfig> = {
     },
     status: "active",
   },
-  
-  medellin: {
-    id: "medellin", 
-    name: "Centro Medellín",
-    region: "co-northwest",
-    gcpProject: {
-      projectId: "logistica-medellin",
-      location: "us-central1",
-      serviceAccountPath: process.env.GCP_SA_MEDELLIN_PATH,
-    },
-    firestore: {
-      chatsCollection: "chats",
-      vectorCollection: "pdf_documents_vector",
-    },
-    mcp: {
-      serverUrl: process.env.MCP_MEDELLIN_URL || "https://mcp-medellin.run.app",
-      isEnabled: true,
-      fallbackEnabled: true,
-    },
-    billing: {
-      enabled: true,
-      maxChatsPerDay: 800,
-      maxTokensPerMonth: 80000,
-    },
-    status: "active",
-  },
-  
-  cucuta: {
-    id: "cucuta",
-    name: "Centro Cúcuta", 
-    region: "co-northeast",
-    gcpProject: {
-      projectId: "logistica-cucuta",
-      location: "us-central1",
-      serviceAccountPath: process.env.GCP_SA_CUCUTA_PATH,
-    },
-    firestore: {
-      chatsCollection: "chats",
-      vectorCollection: "pdf_documents_vector",
-    },
-    mcp: {
-      serverUrl: process.env.MCP_CUCUTA_URL || "https://mcp-cucuta.run.app",
-      isEnabled: true,
-      fallbackEnabled: true,
-    },
-    billing: {
-      enabled: true,
-      maxChatsPerDay: 500,
-      maxTokensPerMonth: 50000,
-    },
-    status: "active",
-  },
 };
 
-export const DEFAULT_CENTER = "bogota";
+export const DEFAULT_CENTER = "default";
 
 export function getCenterConfig(centerId: string): CenterConfig {
   const config = CENTERS_CONFIG[centerId];
