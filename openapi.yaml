@@ -1,15 +1,39 @@
 openapi: 3.0.3
 info:
   title: AI Chat Orchestrator API
-  description: API para el orquestador de chat con IA multi-tenant con soporte RAG y MCP
+  description: |
+    API para el orquestador de chat con IA multi-tenant con soporte RAG y MCP.
+    
+    ## Sistema Multi-Tenant
+    
+    El sistema soporta múltiples centros de distribución, cada uno con:
+    - Su propio proyecto GCP para GoogleGenAI/Vertex AI
+    - Base de datos Firestore aislada
+    - Servidor MCP opcional para herramientas específicas
+    - Configuración y límites independientes
+    
+    ### Centros Disponibles:
+    - **default**: Centro Backend (proyecto: backend-developer-446300)
+    - **cucuta**: Centro Bavaria Cúcuta (proyecto: bavaria-412804)
+    
+    ### Identificación del Centro:
+    El centro se determina en el siguiente orden de prioridad:
+    1. Header `X-Center-Id` (máxima prioridad)
+    2. Query parameter `center`
+    3. Fallback a centro `default`
+    
+    ### Aislamiento de Datos:
+    - Cada centro tiene sus propios chats y mensajes
+    - Los embeddings se generan con el proyecto GCP del centro
+    - No hay compartición de datos entre centros
   version: 2.0.0
   contact:
     name: AI Chat Orchestrator Team
 servers:
   - url: http://localhost:8080
     description: Servidor de desarrollo
-  - url: https://your-production-domain.com
-    description: Servidor de producción
+  - url: https://ai-chat-orchestrator-614117709322.us-central1.run.app
+    description: Servidor de producción Google Cloud Run
 
 paths:
   /chat/users/{userId}:
@@ -317,10 +341,31 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
+  /health:
+    get:
+      summary: Health check básico del servicio
+      description: Verifica que el servicio esté operativo
+      operationId: getHealth
+      responses:
+        '200':
+          description: Servicio operativo
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "ok"
+                  timestamp:
+                    type: string
+                    format: date-time
+                    example: "2025-07-25T16:00:00.000Z"
+
   /chat/health/multitenant:
     get:
       summary: Health check del sistema multi-tenant
-      description: Verifica el estado de todos los centros y servicios
+      description: Verifica el estado de todos los centros, servicios y configuraciones GoogleGenAI
       operationId: getMultiTenantHealth
       responses:
         '200':
@@ -573,12 +618,38 @@ components:
             cucuta: true
         googleGenAI:
           type: object
-          description: Estado de instancias GoogleGenAI
-          additionalProperties:
-            type: boolean
-          example:
-            default: true
-            cucuta: true
+          description: Estado de GoogleGenAI multi-tenant
+          properties:
+            health:
+              type: object
+              description: Estado de salud por centro
+              additionalProperties:
+                type: boolean
+              example:
+                default: true
+                cucuta: true
+            configuration:
+              type: object
+              description: Configuración activa por centro
+              additionalProperties:
+                type: object
+                properties:
+                  projectId:
+                    type: string
+                    description: ID del proyecto GCP
+                    example: "backend-developer-446300"
+                  location:
+                    type: string
+                    description: Ubicación del proyecto
+                    example: "us-central1"
+                  name:
+                    type: string
+                    description: Nombre del centro
+                    example: "Centro Default (Backend)"
+                  active:
+                    type: boolean
+                    description: Si el centro está activo
+                    example: true
         availableCenters:
           type: array
           items:
