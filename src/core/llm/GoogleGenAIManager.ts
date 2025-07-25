@@ -1,5 +1,4 @@
 import { GoogleGenAI } from "@google/genai";
-import { getCenterConfig } from "../multitenant/CenterConfig";
 
 /**
  * Singleton Manager para GoogleGenAI instances por centro
@@ -16,19 +15,18 @@ export class GoogleGenAIManager {
    */
   static getInstance(centerId: string): GoogleGenAI {
     if (!this.instances.has(centerId)) {
-      const centerConfig = getCenterConfig(centerId);
-      
       console.log(`GoogleGenAIManager: Creando nueva instancia para centro ${centerId}`);
       
+      // ✅ GoogleGenAI siempre usa proyecto local (backend-developer-446300)
+      // Solo Firestore y otros servicios son cross-project
       const aiInstance = new GoogleGenAI({
         vertexai: true,
-        project: centerConfig.gcpProject.projectId,
-        location: centerConfig.gcpProject.location
-        // ADC (Application Default Credentials) maneja auth cross-project
+        project: "backend-developer-446300", // Proyecto local fijo
+        location: "us-central1"
       });
 
       this.instances.set(centerId, aiInstance);
-      console.log(`GoogleGenAIManager: ✅ Instancia creada para ${centerId} (proyecto: ${centerConfig.gcpProject.projectId})`);
+      console.log(`GoogleGenAIManager: ✅ Instancia creada para ${centerId} (proyecto local: backend-developer-446300)`);
     }
 
     return this.instances.get(centerId)!;
