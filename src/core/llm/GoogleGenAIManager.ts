@@ -6,85 +6,67 @@ import { GoogleGenAI } from "@google/genai";
  * con su proyecto GCP específico
  */
 export class GoogleGenAIManager {
-  private static instances = new Map<string, GoogleGenAI>();
+  private static instance: GoogleGenAI | null = null;
 
   /**
-   * Obtiene o crea una instancia de GoogleGenAI para un centro específico
-   * @param centerId ID del centro (default, cucuta)
-   * @returns Instancia de GoogleGenAI configurada para el centro
+   * Obtiene la instancia única de GoogleGenAI (siempre proyecto local)
+   * @param centerId ID del centro (ignorado, siempre usa proyecto local)
+   * @returns Instancia de GoogleGenAI configurada para proyecto local
    */
-  static getInstance(centerId: string): GoogleGenAI {
-    if (!this.instances.has(centerId)) {
-      console.log(`GoogleGenAIManager: Creando nueva instancia para centro ${centerId}`);
+  static getInstance(centerId?: string): GoogleGenAI {
+    if (!this.instance) {
+      console.log(`GoogleGenAIManager: Creando instancia única (proyecto local)`);
       
       // ✅ GoogleGenAI siempre usa proyecto local (backend-developer-446300)
       // Solo Firestore y otros servicios son cross-project
-      const aiInstance = new GoogleGenAI({
+      this.instance = new GoogleGenAI({
         vertexai: true,
         project: "backend-developer-446300", // Proyecto local fijo
         location: "us-central1"
       });
 
-      this.instances.set(centerId, aiInstance);
-      console.log(`GoogleGenAIManager: ✅ Instancia creada para ${centerId} (proyecto local: backend-developer-446300)`);
+      console.log(`GoogleGenAIManager: ✅ Instancia única creada (proyecto local: backend-developer-446300)`);
     }
 
-    return this.instances.get(centerId)!;
+    return this.instance;
   }
 
   /**
-   * Obtiene todas las instancias activas
-   * @returns Map de instancias por centerId
+   * Limpia la instancia única (útil para testing o reconfiguración)
    */
-  static getAllInstances(): Map<string, GoogleGenAI> {
-    return new Map(this.instances);
-  }
-
-  /**
-   * Limpia una instancia específica (útil para testing o reconfiguración)
-   * @param centerId ID del centro a limpiar
-   */
-  static clearInstance(centerId: string): void {
-    if (this.instances.has(centerId)) {
-      this.instances.delete(centerId);
-      console.log(`GoogleGenAIManager: Instancia ${centerId} eliminada`);
+  static clearInstance(): void {
+    if (this.instance) {
+      this.instance = null;
+      console.log(`GoogleGenAIManager: Instancia única eliminada`);
     }
   }
 
   /**
-   * Limpia todas las instancias
-   */
-  static clearAllInstances(): void {
-    const count = this.instances.size;
-    this.instances.clear();
-    console.log(`GoogleGenAIManager: ${count} instancias eliminadas`);
-  }
-
-  /**
-   * Verifica si existe una instancia para un centro
-   * @param centerId ID del centro
+   * Verifica si existe la instancia única
    * @returns true si existe la instancia
    */
-  static hasInstance(centerId: string): boolean {
-    return this.instances.has(centerId);
+  static hasInstance(): boolean {
+    return this.instance !== null;
   }
 
   /**
-   * Health check de las instancias activas
-   * @returns Record con el estado de cada centro
+   * Health check de la instancia única
+   * @returns Record con el estado (siempre "local")
    */
   static async healthCheck(): Promise<Record<string, boolean>> {
     const results: Record<string, boolean> = {};
     
-    for (const [centerId, aiInstance] of this.instances) {
+    if (this.instance) {
       try {
         // Test básico: intentar listar modelos
-        await aiInstance.models.list();
-        results[centerId] = true;
+        await this.instance.models.list();
+        results["local"] = true;
       } catch (error) {
-        console.error(`GoogleGenAIManager: Health check failed for ${centerId}:`, error);
-        results[centerId] = false;
+        console.error(`GoogleGenAIManager: Health check failed:`, error);
+        results["local"] = false;
       }
+    } else {
+      results["local"] = false;
     }
     
     return results;

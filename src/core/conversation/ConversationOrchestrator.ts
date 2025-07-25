@@ -95,10 +95,10 @@ export class ConversationOrchestrator {
             console.log(
               `ConversationOrchestrator: ${tools.length} herramientas MCP configuradas para ${centerId}`
             );
-            console.log(
-              "DEBUG: Herramientas MCP convertidas:",
-              JSON.stringify(tools, null, 2)
-            );
+            // console.log(
+            //   "DEBUG: Herramientas MCP convertidas:",
+            //   JSON.stringify(tools, null, 2)
+            // );
           }
         }
       } catch (error) {
