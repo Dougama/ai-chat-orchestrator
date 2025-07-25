@@ -1,6 +1,6 @@
 import { Firestore, FieldValue } from "@google-cloud/firestore";
 import { SearchResult, VectorDocument } from "../../types";
-import { GoogleGenAIProvider } from "../llm/GoogleGenAIProvider";
+import { getEmbedding } from "../llm/GoogleGenAIProvider";
 
 const FIRESTORE_COLLECTION = "pdf_documents_vector";
 // Firestore dinámico - se pasa desde el contexto del centro
@@ -13,9 +13,11 @@ const FIRESTORE_COLLECTION = "pdf_documents_vector";
  */
 async function generateQueryEmbedding(queryText: string, centerId: string): Promise<number[]> {
   try {
-    const embeddingProvider = new GoogleGenAIProvider(centerId);
-    const response = await embeddingProvider.getEmbedding({ text: queryText });
-    return response.values;
+    const embedding = await getEmbedding(queryText, centerId);
+    if (!embedding || embedding.length === 0) {
+      throw new Error("No se generó embedding válido");
+    }
+    return embedding;
   } catch (error: any) {
     throw new Error(`Error generando embedding de consulta para centro ${centerId}: ${error.message}`);
   }
