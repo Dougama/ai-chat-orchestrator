@@ -24,22 +24,51 @@ const PROJECT_TO_CENTER_MAP: Record<string, string> = {
   // Agregar más mapeos según se necesiten
 };
 
-// Inicializar Firebase Admin solo una vez
-let isFirebaseInitialized = false;
+// Mapa de instancias Firebase Admin por proyecto
+const firebaseInstances: Record<string, admin.app.App> = {};
 
-function initializeFirebase() {
-  if (!isFirebaseInitialized) {
+/**
+ * Obtiene o crea una instancia de Firebase Admin para un proyecto específico
+ */
+function getFirebaseInstance(projectId: string): admin.app.App {
+  if (!firebaseInstances[projectId]) {
     try {
-      // En Cloud Run, las credenciales se obtienen automáticamente
-      admin.initializeApp({
+      console.log(`Inicializando Firebase Admin para proyecto: ${projectId}`);
+      
+      // Crear una nueva instancia con nombre único
+      firebaseInstances[projectId] = admin.initializeApp({
         credential: admin.credential.applicationDefault(),
-      });
-      isFirebaseInitialized = true;
-      console.log("Firebase Admin SDK inicializado correctamente");
+        projectId: projectId
+      }, projectId); // El segundo parámetro es el nombre único de la app
+      
+      console.log(`Firebase Admin SDK inicializado para proyecto: ${projectId}`);
     } catch (error) {
-      console.error("Error inicializando Firebase Admin:", error);
+      console.error(`Error inicializando Firebase Admin para proyecto ${projectId}:`, error);
       throw error;
     }
+  }
+  
+  return firebaseInstances[projectId];
+}
+
+/**
+ * Extrae el projectId del token JWT decodificando su payload
+ */
+function extractProjectIdFromToken(token: string): string | null {
+  try {
+    // Decodificar el payload del JWT (segunda parte)
+    const tokenParts = token.split('.');
+    if (tokenParts.length !== 3) {
+      throw new Error('Token JWT inválido');
+    }
+    
+    const payload = JSON.parse(Buffer.from(tokenParts[1], 'base64').toString());
+    
+    // El projectId está en el campo 'aud' (audience)
+    return payload.aud || null;
+  } catch (error) {
+    console.error('Error extrayendo projectId del token:', error);
+    return null;
   }
 }
 
@@ -53,8 +82,6 @@ export async function authMiddleware(
   next: NextFunction
 ): Promise<Response | void> {
   try {
-    initializeFirebase();
-
     // Extraer token del header Authorization
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -66,18 +93,35 @@ export async function authMiddleware(
     const token = authHeader.split("Bearer ")[1];
     
     try {
-      // Verificar el token con Firebase Admin
-      const decodedToken = await admin.auth().verifyIdToken(token) as DecodedToken;
+      // 1. Extraer projectId del token
+      const projectId = extractProjectIdFromToken(token);
+      if (!projectId) {
+        return res.status(401).json({ 
+          error: "Token inválido: no se pudo extraer projectId" 
+        });
+      }
+
+      // 2. Validar que el projectId esté en nuestro mapeo
+      if (!PROJECT_TO_CENTER_MAP[projectId]) {
+        return res.status(401).json({ 
+          error: `Proyecto no autorizado: ${projectId}` 
+        });
+      }
+
+      // 3. Obtener la instancia Firebase Admin correcta para este proyecto
+      const firebaseApp = getFirebaseInstance(projectId);
       
-      // Extraer información del usuario
+      // 4. Verificar el token con la instancia específica del proyecto
+      const decodedToken = await admin.auth(firebaseApp).verifyIdToken(token) as DecodedToken;
+      
+      // 5. Extraer información del usuario
       const uid = decodedToken.uid;
       const email = decodedToken.email;
-      const projectId = decodedToken.firebase?.tenant || process.env.GCP_PROJECT_ID || undefined;
       
-      // Mapear projectId a centerId
-      const centerId = projectId ? PROJECT_TO_CENTER_MAP[projectId] : undefined;
+      // 6. Mapear projectId a centerId
+      const centerId = PROJECT_TO_CENTER_MAP[projectId];
       
-      // Si hay userId en el path, validar que coincida con el token
+      // 7. Si hay userId en el path, validar que coincida con el token
       const pathUserId = req.params.userId;
       if (pathUserId && pathUserId !== uid && pathUserId !== "anonymous") {
         return res.status(403).json({ 
@@ -85,7 +129,7 @@ export async function authMiddleware(
         });
       }
       
-      // Agregar información del usuario al request
+      // 8. Agregar información del usuario al request
       req.user = {
         uid,
         email,
@@ -93,10 +137,12 @@ export async function authMiddleware(
         centerId
       };
       
-      // Si se identificó un centro desde el token, agregarlo al header
+      // 9. Si se identificó un centro desde el token, agregarlo al header
       if (centerId && !req.headers["x-center-id"]) {
         req.headers["x-center-id"] = centerId;
       }
+
+      console.log(`✅ Autenticación exitosa: Usuario ${uid} del proyecto ${projectId} (centro: ${centerId})`);
       
       next();
     } catch (error) {
