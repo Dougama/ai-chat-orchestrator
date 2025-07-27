@@ -1,4 +1,4 @@
-import { ChatMessage } from "../types";
+import { ChatMessage, ChatResponseWithData } from "../types";
 import { ConversationOrchestrator } from "../core/conversation/ConversationOrchestrator";
 import { ChatManager } from "../core/chat/ChatManager";
 import { MessageManager } from "../core/chat/MessageManager";
@@ -29,7 +29,7 @@ interface CenterContext {
 
 export const handleChatPrompt = async (
   request: ChatRequest
-): Promise<ChatMessage & { chatId: string }> => {
+): Promise<ChatResponseWithData> => {
   // Usar centerContext si está disponible, sino fallback
   const firestore = request.centerContext?.firestore || fallbackFirestore;
   const centerId = request.centerContext?.centerId || 'default';

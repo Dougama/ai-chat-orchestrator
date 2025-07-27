@@ -1,4 +1,4 @@
-import { ChatMessage } from "../../types";
+import { ChatMessage, MCPToolResult, ChatResponseWithData } from "../../types";
 import { ChatRequest, ChatWithMessages } from "../chat/interfaces";
 import { ChatManager } from "../chat/ChatManager";
 import { MessageManager } from "../chat/MessageManager";
@@ -26,7 +26,7 @@ export class ConversationOrchestrator {
     firestore: Firestore,
     request: ChatRequest,
     centerId?: string
-  ): Promise<ChatWithMessages> {
+  ): Promise<ChatResponseWithData> {
     console.log(
       `Recibido prompt: "${request.prompt}", para el chat ID: ${
         request.chatId || "Nuevo Chat"
@@ -174,48 +174,29 @@ export class ConversationOrchestrator {
     // 9. Actualizamos la fecha del chat
     await ChatManager.updateChatTimestamp(firestore, chatId);
 
-    // 10. Extraer datos MCP válidos para el campo data
-    const mcpDataByType: { [key: string]: any } = {};
-    let hasMcpData = false;
+    // 10. Preparar datos MCP en formato simplificado
+    const mcpData: MCPToolResult[] = functionCallResults.map((result: any) => ({
+      toolName: result.name,
+      callId: `call_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      success: !!result.response && !result.response.error,
+      data: result.response,
+      error: result.response?.error
+    }));
 
-    // console.log(
-    //   "DEBUG ConversationOrchestrator: Function call results:",
-    //   functionCallResults.map((r) => ({
-    //     name: r.name,
-    //     hasResponse: !!r.response,
-    //     hasMcpData: !!r.response?.mcpData,
-    //     dataType: r.response?.dataType,
-    //   }))
-    // );
-
-    functionCallResults.forEach((result: any) => {
-      if (result.response?.mcpData && result.response?.dataType) {
-        mcpDataByType[result.response.dataType] = result.response.mcpData;
-        hasMcpData = true;
-        console.log("DEBUG ConversationOrchestrator: Agregando datos MCP:", {
-          dataType: result.response.dataType,
-          keys: Object.keys(result.response.mcpData),
-        });
-      }
+    console.log("DEBUG ConversationOrchestrator: MCP data preparada:", {
+      toolCallsCount: mcpData.length,
+      tools: mcpData.map(d => ({ toolName: d.toolName, success: d.success }))
     });
 
-    // console.log("DEBUG ConversationOrchestrator: Resultado final mcpData:", {
-    //   hasMcpData,
-    //   dataTypes: Object.keys(mcpDataByType),
-    // });
-
-    // 11. Devolvemos la respuesta con campo data si hay datos MCP
-    const responseData: any = {
+    // 11. Devolvemos la respuesta con campo data[] si hay resultados MCP
+    const responseData: ChatResponseWithData = {
       id: assistantDocId,
       role: "assistant" as const,
       content: assistantText,
       timestamp: new Date(),
       chatId: chatId,
+      ...(mcpData.length > 0 && { data: mcpData })
     };
-
-    if (hasMcpData) {
-      responseData.data = mcpDataByType;
-    }
 
     return responseData;
   }
@@ -296,10 +277,16 @@ export class ConversationOrchestrator {
     const enhancedPrompt = `
       ${originalPrompt}
       
-      RESULTADOS DE HERRAMIENTAS:
+      DATOS DE HERRAMIENTAS EJECUTADAS:
       ${toolResultsText}
       
-      Incorpora estos resultados en tu respuesta de manera natural y útil para el usuario.
+      INSTRUCCIONES PARA LA RESPUESTA:
+      - Los datos detallados arriba se mostrarán VISUALMENTE al usuario en una interfaz separada
+      - NO enumeres/listes todos los datos individualmente en tu respuesta
+      - Haz un ANÁLISIS/RESUMEN de los datos: totales, patrones, insights importantes
+      - Menciona qué tipo de información encontraste y los principales hallazgos
+      - Sé conciso pero informativo y útil
+      - Enfócate en interpretar los datos más que en mostrarlos
     `;
 
     return await llmProvider.generateContent({
@@ -314,7 +301,7 @@ export class ConversationOrchestrator {
   static async handleChatPromptSimple(
     firestore: Firestore,
     request: ChatRequest
-  ): Promise<ChatWithMessages> {
+  ): Promise<ChatResponseWithData> {
     return await this.handleChatPrompt(firestore, request);
   }
 }

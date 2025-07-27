@@ -75,6 +75,7 @@ function extractProjectIdFromToken(token: string): string | null {
 /**
  * Middleware de autenticación Firebase
  * Valida el JWT token y extrae información del usuario
+ * En desarrollo local bypassa la autenticación
  */
 export async function authMiddleware(
   req: AuthenticatedRequest,
@@ -82,6 +83,28 @@ export async function authMiddleware(
   next: NextFunction
 ): Promise<Response | void> {
   try {
+    // BYPASS PARA DESARROLLO LOCAL
+    if (process.env.NODE_ENV === 'development' && req.headers.host?.includes('localhost')) {
+      console.log('🚀 DESARROLLO LOCAL: Bypassing autenticación');
+      
+      // Extraer centerId del header o query param, fallback a 'cucuta'
+      const centerId = req.headers["x-center-id"] as string || 
+                      req.query.center as string || 
+                      'cucuta';
+      
+      // Mock user para desarrollo
+      req.user = {
+        uid: req.params.userId || 'dev-user',
+        email: 'dev@test.com',
+        projectId: centerId === 'cucuta' ? 'bavaria-412804' : 'backend-developer-446300',
+        centerId: centerId
+      };
+      
+      console.log(`🔧 DEV: Usuario mock ${req.user.uid} del centro ${centerId}`);
+      return next();
+    }
+
+    // PRODUCCIÓN: Validar token normalmente
     // Extraer token del header Authorization
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith("Bearer ")) {

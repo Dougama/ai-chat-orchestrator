@@ -7,15 +7,17 @@ export interface ChatMessage {
   timestamp: Date;
 }
 
+export interface MCPToolResult {
+  toolName: string;
+  callId: string;
+  success: boolean;
+  data?: any;
+  error?: string;
+}
+
 export interface ChatResponseWithData extends ChatMessage {
   chatId?: string;
-  data?: {
-    compensationData?: any;
-    rendimientosData?: any;
-    novedadesData?: any;
-    novedadCreatedData?: any;
-    [key: string]: any;
-  };
+  data?: MCPToolResult[];
 }
 
 export interface ToolDefinition {
