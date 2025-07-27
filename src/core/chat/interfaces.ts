@@ -7,10 +7,18 @@ export interface ChatRequest {
   userId?: string;
 }
 
+export interface ToolCall {
+  toolName: string;
+  callParams: any;
+  timestamp: any; // Firestore Timestamp
+  success: boolean;
+}
+
 export interface ChatData {
   title: string;
   createdAt: any; // Firestore Timestamp
   lastUpdatedAt?: any; // Firestore Timestamp
+  toolCalls?: ToolCall[];
 }
 
 export interface MessageData {

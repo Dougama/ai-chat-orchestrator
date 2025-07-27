@@ -1,5 +1,5 @@
 import { ChatMessage, MCPToolResult, ChatResponseWithData } from "../../types";
-import { ChatRequest, ChatWithMessages } from "../chat/interfaces";
+import { ChatRequest, ChatWithMessages, ToolCall } from "../chat/interfaces";
 import { ChatManager } from "../chat/ChatManager";
 import { MessageManager } from "../chat/MessageManager";
 import { RAGPipeline } from "../rag/RAGPipeline";
@@ -8,8 +8,9 @@ import { MCPConnectionManager } from "../mcp/MCPConnectionManager";
 import { MCPAdapter } from "../mcp/MCPAdapter";
 import { MCPFallbackHandler } from "../mcp/MCPFallbackHandler";
 import { MCPConnection } from "../mcp/interfaces";
-import { Firestore } from "@google-cloud/firestore";
+import { Firestore, Timestamp, FieldValue } from "@google-cloud/firestore";
 import { FunctionCallingConfigMode } from "@google/genai";
+import { toolRegistry } from "../../tools/definitions/tool_registry";
 
 export class ConversationOrchestrator {
   private static mcpConnectionManager = new MCPConnectionManager();
@@ -71,9 +72,14 @@ export class ConversationOrchestrator {
       centerId || "bogota"
     );
 
-    // 5. Preparamos herramientas MCP si tenemos centerId
+    // 5. Preparamos herramientas (internas + MCP)
     let tools: any[] = [];
     let mcpConnection: MCPConnection | null = null;
+
+    // Agregar herramientas internas
+    const internalTools = this.getInternalTools();
+    tools.push(...internalTools);
+    console.log(`ConversationOrchestrator: ${internalTools.length} herramientas internas agregadas`);
 
     if (centerId) {
       try {
@@ -91,14 +97,11 @@ export class ConversationOrchestrator {
 
           if (validTools.length > 0) {
             // Convertir herramientas MCP a formato Google GenAI
-            tools = this.mcpAdapter.convertMCPToolsToGenAI(validTools);
+            const mcpGenAITools = this.mcpAdapter.convertMCPToolsToGenAI(validTools);
+            tools.push(...mcpGenAITools);
             console.log(
-              `ConversationOrchestrator: ${tools.length} herramientas MCP configuradas para ${centerId}`
+              `ConversationOrchestrator: ${mcpGenAITools.length} herramientas MCP configuradas para ${centerId}`
             );
-            // console.log(
-            //   "DEBUG: Herramientas MCP convertidas:",
-            //   JSON.stringify(tools, null, 2)
-            // );
           }
         }
       } catch (error) {
@@ -141,13 +144,11 @@ export class ConversationOrchestrator {
 
     // 7. Procesar function calls si existen
     let functionCallResults: any[] = [];
-    if (
-      response.functionCalls &&
-      response.functionCalls.length > 0 &&
-      centerId
-    ) {
+    if (response.functionCalls && response.functionCalls.length > 0) {
       functionCallResults = await this.processFunctionCalls(
-        centerId,
+        firestore,
+        chatId,
+        centerId || 'default',
         response.functionCalls,
         mcpConnection
       );
@@ -202,9 +203,11 @@ export class ConversationOrchestrator {
   }
 
   /**
-   * Procesa function calls ejecutándolas en el servidor MCP
+   * Procesa function calls ejecutándolas (internas o MCP)
    */
   private static async processFunctionCalls(
+    firestore: Firestore,
+    chatId: string,
     centerId: string,
     functionCalls: any[],
     mcpConnection: MCPConnection | null
@@ -213,34 +216,77 @@ export class ConversationOrchestrator {
 
     for (const functionCall of functionCalls) {
       try {
-        // Convertir function call a formato MCP
-        const mcpToolCalls = this.mcpAdapter.convertGenAIResultsToMCP([
-          functionCall,
-        ]);
-
-        if (mcpToolCalls.length > 0) {
-          const mcpToolCall = mcpToolCalls[0];
-
-          // Ejecutar herramienta MCP
-          let toolResult;
-          if (mcpConnection?.isConnected) {
-            toolResult = await this.mcpConnectionManager.executeToolCall(
-              centerId,
-              mcpToolCall
-            );
-          } else {
-            // Usar fallback si MCP no está disponible
-            toolResult = await this.mcpFallbackHandler.executeFallbackTool(
-              mcpToolCall
-            );
+        const toolName = functionCall.name;
+        const callParams = this.extractToolCallParams(functionCall);
+        
+        console.log(`ConversationOrchestrator: Procesando function call: ${toolName}`);
+        
+        // Verificar si es herramienta interna
+        const isInternalTool = Object.values(toolRegistry).some(
+          tool => tool.type === "LOCAL" && tool.definition.name === toolName
+        );
+        
+        if (isInternalTool) {
+          // Ejecutar herramienta interna
+          const result = await this.executeInternalTool(firestore, chatId, toolName, callParams);
+          if (result) {
+            results.push(result);
           }
+        } else {
+          // Verificar caché antes de ejecutar herramienta MCP
+          const cachedResult = await this.checkToolCallCache(firestore, chatId, toolName, callParams);
+          
+          if (cachedResult) {
+            console.log(`ConversationOrchestrator: Usando caché para ${toolName}`);
+            results.push({
+              name: toolName,
+              response: {
+                fromCache: true,
+                params: callParams
+              }
+            });
+          } else {
+            // Ejecutar herramienta MCP
+            const mcpToolCalls = this.mcpAdapter.convertGenAIResultsToMCP([functionCall]);
 
-          // Convertir resultado de vuelta a formato GenAI
-          const genAIResult = this.mcpAdapter.convertMCPResultsToGenAI([
-            toolResult,
-          ]);
-          if (genAIResult.length > 0) {
-            results.push(genAIResult[0]);
+            if (mcpToolCalls.length > 0) {
+              const mcpToolCall = mcpToolCalls[0];
+
+              let toolResult;
+              if (mcpConnection?.isConnected) {
+                toolResult = await this.mcpConnectionManager.executeToolCall(
+                  centerId,
+                  mcpToolCall
+                );
+              } else {
+                toolResult = await this.mcpFallbackHandler.executeFallbackTool(
+                  mcpToolCall
+                );
+              }
+
+              // Convertir resultado de vuelta a formato GenAI
+              const genAIResult = this.mcpAdapter.convertMCPResultsToGenAI([toolResult]);
+              if (genAIResult.length > 0) {
+                // Modificar resultado para incluir solo params
+                const modifiedResult = {
+                  ...genAIResult[0],
+                  response: {
+                    params: callParams,
+                    totalRegistros: toolResult.data?.totalRegistros || toolResult.data?.length || 0
+                  }
+                };
+                results.push(modifiedResult);
+                
+                // Guardar llamada MCP exitosa en historial
+                console.log(`ConversationOrchestrator: MCP tool result - toolName: ${toolName}, success: ${toolResult.success}`);
+                if (toolResult.success) {
+                  console.log(`ConversationOrchestrator: Guardando toolCall exitoso: ${toolName}`);
+                  await this.saveToolCall(firestore, chatId, toolName, callParams, true);
+                } else {
+                  console.log(`ConversationOrchestrator: No guardando toolCall fallido: ${toolName}, error: ${toolResult.error}`);
+                }
+              }
+            }
           }
         }
       } catch (error) {
@@ -303,5 +349,154 @@ export class ConversationOrchestrator {
     request: ChatRequest
   ): Promise<ChatResponseWithData> {
     return await this.handleChatPrompt(firestore, request);
+  }
+
+  /**
+   * Obtiene herramientas internas disponibles en formato Google GenAI
+   */
+  private static getInternalTools(): any[] {
+    const internalTools: any[] = [];
+    
+    // Iterar sobre herramientas locales del registry
+    Object.values(toolRegistry).forEach(tool => {
+      if (tool.type === "LOCAL") {
+        // Convertir definición a formato Google GenAI
+        internalTools.push({
+          name: tool.definition.name,
+          description: tool.definition.description,
+          parameters: tool.definition.parameters
+        });
+      }
+    });
+    
+    return internalTools;
+  }
+
+  /**
+   * Extrae parámetros de una llamada de función para guardar en toolCalls
+   */
+  private static extractToolCallParams(functionCall: any): any {
+    return functionCall.args || functionCall.parameters || {};
+  }
+
+  /**
+   * Ejecuta una herramienta interna
+   */
+  private static async executeInternalTool(
+    firestore: Firestore,
+    chatId: string,
+    toolName: string,
+    callParams: any
+  ): Promise<any> {
+    console.log(`ConversationOrchestrator: Ejecutando herramienta interna: ${toolName}`);
+    
+    try {
+      // Agregar más herramientas internas aquí en el futuro
+      console.warn(`ConversationOrchestrator: Herramienta interna no implementada: ${toolName}`);
+      return null;
+      
+    } catch (error) {
+      console.error(`ConversationOrchestrator: Error ejecutando herramienta interna ${toolName}:`, error);
+      return {
+        name: toolName,
+        response: {
+          error: error instanceof Error ? error.message : 'Error desconocido'
+        }
+      };
+    }
+  }
+
+  /**
+   * Verifica si existe una llamada previa con los mismos parámetros en el caché
+   */
+  private static async checkToolCallCache(
+    firestore: Firestore,
+    chatId: string,
+    toolName: string,
+    callParams: any
+  ): Promise<any | null> {
+    try {
+      const chatDoc = await firestore.collection("chats").doc(chatId).get();
+      
+      if (!chatDoc.exists) {
+        return null;
+      }
+      
+      const chatData = chatDoc.data();
+      const toolCalls: ToolCall[] = chatData?.toolCalls || [];
+      
+      // Buscar llamada previa con mismos parámetros
+      const cachedCall = toolCalls.find(call => 
+        call.toolName === toolName &&
+        call.success &&
+        this.deepEqual(call.callParams, callParams)
+      );
+      
+      if (cachedCall) {
+        console.log(`ConversationOrchestrator: Encontrada llamada en caché para ${toolName}`);
+        return cachedCall;
+      }
+      
+      return null;
+    } catch (error) {
+      console.error(`ConversationOrchestrator: Error verificando caché:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * Compara dos objetos profundamente para verificar igualdad
+   */
+  private static deepEqual(obj1: any, obj2: any): boolean {
+    if (obj1 === obj2) return true;
+    
+    if (obj1 == null || obj2 == null) return false;
+    
+    if (typeof obj1 !== typeof obj2) return false;
+    
+    if (typeof obj1 !== 'object') return obj1 === obj2;
+    
+    const keys1 = Object.keys(obj1);
+    const keys2 = Object.keys(obj2);
+    
+    if (keys1.length !== keys2.length) return false;
+    
+    for (let key of keys1) {
+      if (!keys2.includes(key)) return false;
+      if (!this.deepEqual(obj1[key], obj2[key])) return false;
+    }
+    
+    return true;
+  }
+
+  /**
+   * Guarda una llamada de herramienta en el historial del chat
+   */
+  private static async saveToolCall(
+    firestore: Firestore,
+    chatId: string,
+    toolName: string,
+    callParams: any,
+    success: boolean
+  ): Promise<void> {
+    try {
+      const toolCall: ToolCall = {
+        toolName,
+        callParams,
+        timestamp: Timestamp.now(),
+        success
+      };
+      
+      const chatRef = firestore.collection("chats").doc(chatId);
+      
+      await chatRef.update({
+        toolCalls: FieldValue.arrayUnion(toolCall)
+      });
+      
+      console.log(`ConversationOrchestrator: Llamada de herramienta guardada: ${toolName}`);
+    } catch (error) {
+      console.error(`ConversationOrchestrator: Error guardando llamada de herramienta:`, error);
+      // No lanzamos error para no interrumpir el flujo principal
+    }
   }
 }

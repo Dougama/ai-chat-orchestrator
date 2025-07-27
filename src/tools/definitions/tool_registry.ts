@@ -25,7 +25,14 @@ export const toolRegistry: ToolRegistry = {
       description:
         "Busca información específica en los manuales de protocolos de logística.",
       parameters: {
-        /* ... JSON Schema ... */
+        type: "object",
+        properties: {
+          query: {
+            type: "string",
+            description: "Consulta a buscar en los protocolos PDF"
+          }
+        },
+        required: ["query"]
       },
     },
   },
