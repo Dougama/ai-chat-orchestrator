@@ -348,10 +348,15 @@ export class ConversationOrchestrator {
       ${toolResultsText}
       
       INSTRUCCIONES PARA LA RESPUESTA:
-      - Los datos detallados arriba se mostrarán VISUALMENTE al usuario en una interfaz separada
-      - NO enumeres/listes todos los datos individualmente en tu respuesta
-      - Haz un ANÁLISIS/RESUMEN de los datos: totales, patrones, insights importantes
-      - Menciona qué tipo de información encontraste y los principales hallazgos
+      - Los datos detallados arriba se mostrarán VISUALMENTE al usuario en tarjetas informativas debajo de tu respuesta
+      - NO reproduzcas/copies los datos en crudo (JSON, arrays, objetos, códigos, IDs, fechas exactas, etc.)
+      - NO enumeres/listes todos los registros o items individualmente 
+      - NO menciones parámetros técnicos como "params", "totalRegistros", "callId", etc.
+      - Haz un ANÁLISIS/RESUMEN conciso de los datos: totales, patrones, insights importantes, tendencias
+      - Menciona qué tipo de información encontraste y los principales hallazgos de negocio
+      - Interpreta los datos desde una perspectiva operacional/gerencial útil para el usuario
+      - SIEMPRE termina tu respuesta indicando al usuario que vea los detalles completos en las tarjetas de abajo
+      - Usa frases como: "Puedes ver todos los detalles en las tarjetas de información a continuación" o "Revisa los detalles completos en las tarjetas de abajo"
       - Sé conciso pero informativo y útil
       - Enfócate en interpretar los datos más que en mostrarlos
     `;
