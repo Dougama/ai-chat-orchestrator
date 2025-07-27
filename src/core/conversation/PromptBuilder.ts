@@ -23,12 +23,6 @@ export const buildAugmentedPrompt = (
     
     IMPORTANTE: Tienes acceso a herramientas específicas para consultar información del sistema y realizar tareas.
     - Las herramientas te permiten acceder a información actualizada del sistema (novedades, rendimientos, compensaciones, etc.).
-    - REVISA EL HISTORIAL DE LA CONVERSACIÓN: Si el usuario pide información que ya analizaste antes, NO necesitas llamar la herramienta nuevamente.
-    - Si ya consultaste y analizaste datos específicos (por ejemplo, novedades del cliente 9999), simplemente refiere a tu análisis anterior.
-    - Solo usa herramientas cuando:
-      * Es información nueva que no has consultado antes
-      * Son parámetros diferentes a consultas anteriores
-      * El usuario explícitamente pide actualizar o refrescar los datos
     - Cuando uses herramientas, los datos se mostrarán visualmente al usuario en una interfaz separada.
     
     Responde de manera clara y concisa, evitando suposiciones innecesarias.
