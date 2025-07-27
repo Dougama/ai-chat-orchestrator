@@ -69,7 +69,8 @@ export class ConversationOrchestrator {
       firestore,
       request.prompt,
       history,
-      centerId || "bogota"
+      centerId || "bogota",
+      chatId
     );
 
     // 5. Preparamos herramientas (internas + MCP)
@@ -114,10 +115,12 @@ export class ConversationOrchestrator {
     }
 
     // 6. Generamos la respuesta del asistente (con herramientas MCP si están disponibles)
-    const llmProvider = GoogleGenAIManager.getProvider(centerId || 'default');
+    const llmProvider = GoogleGenAIManager.getProvider(centerId || 'default', firestore);
 
     const generationConfig = {
       prompt: augmentedPrompt,
+      trackTokens: true,
+      chatId: chatId,
       ...(tools.length > 0 && {
         tools: [{ functionDeclarations: tools }],
         toolConfig: {
@@ -175,6 +178,8 @@ export class ConversationOrchestrator {
       
       const fallbackResponse = await llmProvider.generateContent({
         prompt: augmentedPrompt,
+        trackTokens: true,
+        chatId: chatId,
         // No incluir herramientas para forzar respuesta de conversación normal
       });
       
@@ -363,6 +368,8 @@ export class ConversationOrchestrator {
 
     return await llmProvider.generateContent({
       prompt: enhancedPrompt,
+      trackTokens: true,
+      chatId: "final_response", // Identificador especial para respuestas finales
       tools: tools.length > 0 ? [{ functionDeclarations: tools }] : undefined,
     });
   }

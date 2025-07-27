@@ -16,10 +16,11 @@ export class RAGPipeline {
     firestore: Firestore,
     prompt: string,
     history: ChatMessage[],
-    centerId: string
+    centerId: string,
+    chatId?: string
   ): Promise<string> {
     // 1. Búsqueda vectorial usando GoogleGenAI del centro específico
-    const similarChunks = await searchSimilarEmbeddingsVector(firestore, prompt, centerId);
+    const similarChunks = await searchSimilarEmbeddingsVector(firestore, prompt, centerId, 3, undefined, undefined, chatId);
     
     // 2. Augmentación del prompt
     const augmentedPrompt = buildAugmentedPrompt(

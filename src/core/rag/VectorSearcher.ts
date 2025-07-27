@@ -11,10 +11,14 @@ const FIRESTORE_COLLECTION = "pdf_documents_vector";
  * @param centerId ID del centro
  * @returns Embedding de la consulta
  */
-async function generateQueryEmbedding(queryText: string, centerId: string): Promise<number[]> {
+async function generateQueryEmbedding(queryText: string, centerId: string, firestore?: Firestore, chatId?: string): Promise<number[]> {
   try {
-    const provider = GoogleGenAIManager.getProvider(centerId);
-    const response = await provider.getEmbedding({ text: queryText });
+    const provider = GoogleGenAIManager.getProvider(centerId, firestore);
+    const response = await provider.getEmbedding({ 
+      text: queryText,
+      trackTokens: !!firestore && !!chatId,
+      chatId: chatId
+    });
     
     if (!response.values || response.values.length === 0) {
       throw new Error("No se generó embedding válido");
@@ -41,11 +45,12 @@ export async function searchSimilarEmbeddingsVector(
   centerId: string,
   topK: number = 3,
   collectionName: string = FIRESTORE_COLLECTION,
-  documentFilter?: string
+  documentFilter?: string,
+  chatId?: string
 ): Promise<SearchResult[]> {
   try {
     console.log(`🔍 Generando embedding de consulta para centro ${centerId}...`);
-    const queryEmbedding = await generateQueryEmbedding(queryText, centerId);
+    const queryEmbedding = await generateQueryEmbedding(queryText, centerId, firestore, chatId);
 
     console.log("📥 Realizando búsqueda vectorial en Firestore...");
     let collection = firestore.collection(collectionName);

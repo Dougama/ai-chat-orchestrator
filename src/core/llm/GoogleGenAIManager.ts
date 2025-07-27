@@ -1,6 +1,7 @@
 import { GoogleGenAI } from "@google/genai";
 import { GoogleGenAIProvider } from "./GoogleGenAIProvider";
 import { getCenterConfig } from "../multitenant/CenterConfig";
+import { Firestore } from "@google-cloud/firestore";
 
 /**
  * Manager para instancias de GoogleGenAIProvider por centro
@@ -13,29 +14,26 @@ export class GoogleGenAIManager {
   /**
    * Obtiene o crea un provider para un centro específico
    * @param centerId ID del centro (default, cucuta)
+   * @param firestore Instancia de Firestore para tracking de tokens (opcional)
    * @returns GoogleGenAIProvider configurado para el centro
    */
-  static getProvider(centerId: string): GoogleGenAIProvider {
-    if (!this.providers.has(centerId)) {
-      const centerConfig = getCenterConfig(centerId);
-      
-      console.log(`GoogleGenAIManager: Creando provider para centro ${centerId}`);
-      
-      // Crear instancia de GoogleGenAI para este centro
-      const genAI = this.getGenAIInstance(centerId);
-      
-      // Crear provider usando la instancia específica del centro
-      const provider = new GoogleGenAIProvider(genAI, {
-        centerId,
-        projectId: centerConfig.gcpProject.projectId,
-        location: centerConfig.gcpProject.location
-      });
+  static getProvider(centerId: string, firestore?: Firestore): GoogleGenAIProvider {
+    const centerConfig = getCenterConfig(centerId);
+    
+    // Crear instancia de GoogleGenAI para este centro (reutilizar si existe)
+    const genAI = this.getGenAIInstance(centerId);
+    
+    // Siempre crear un nuevo provider con la instancia de Firestore específica
+    // para evitar problemas de compartir estado entre diferentes llamadas
+    const provider = new GoogleGenAIProvider(genAI, {
+      centerId,
+      projectId: centerConfig.gcpProject.projectId,
+      location: centerConfig.gcpProject.location,
+      firestore: firestore
+    });
 
-      this.providers.set(centerId, provider);
-      console.log(`GoogleGenAIManager: ✅ Provider creado para ${centerId} (proyecto: ${centerConfig.gcpProject.projectId})`);
-    }
-
-    return this.providers.get(centerId)!;
+    console.log(`GoogleGenAIManager: ✅ Provider creado para ${centerId} (proyecto: ${centerConfig.gcpProject.projectId})`);
+    return provider;
   }
 
   /**

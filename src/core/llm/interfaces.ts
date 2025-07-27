@@ -8,6 +8,8 @@ export interface GenerationConfig {
 export interface EmbeddingRequest {
   text: string;
   model?: string;
+  trackTokens?: boolean;
+  chatId?: string;
 }
 
 export interface EmbeddingResponse {
@@ -19,6 +21,8 @@ export interface GenerationRequest {
   config?: GenerationConfig;
   tools?: any[];
   toolConfig?: any;
+  trackTokens?: boolean;
+  chatId?: string;
 }
 
 export interface GenerationResponse {
