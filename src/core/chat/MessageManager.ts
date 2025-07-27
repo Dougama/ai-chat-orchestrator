@@ -63,7 +63,12 @@ export class MessageManager {
   /**
    * Guarda un mensaje del asistente
    */
-  static async saveAssistantMessage(firestore: Firestore, chatId: string, content: string): Promise<string> {
+  static async saveAssistantMessage(
+    firestore: Firestore, 
+    chatId: string, 
+    content: string,
+    data?: any[]
+  ): Promise<string> {
     const messagesCollection = firestore
       .collection("chats")
       .doc(chatId)
@@ -73,6 +78,7 @@ export class MessageManager {
       role: "assistant",
       content: content,
       timestamp: Timestamp.now(),
+      ...(data && { data })
     };
 
     const assistantDocRef = await messagesCollection.add(assistantMessageData);

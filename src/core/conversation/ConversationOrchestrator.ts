@@ -122,25 +122,29 @@ export class ConversationOrchestrator {
         tools: [{ functionDeclarations: tools }],
         toolConfig: {
           functionCallingConfig: {
-            mode: FunctionCallingConfigMode.ANY,
-            allowedFunctionNames: tools.map((t) => t.name),
+            mode: FunctionCallingConfigMode.AUTO,
           },
         },
       }),
     };
 
-    // console.log('DEBUG: Configuración enviada a LLM:', JSON.stringify(generationConfig, null, 2));
+    console.log('DEBUG: Configuración enviada a LLM:', {
+      hasPrompt: !!generationConfig.prompt,
+      promptLength: generationConfig.prompt?.length,
+      hasTools: !!generationConfig.tools,
+      toolsCount: generationConfig.tools?.[0]?.functionDeclarations?.length || 0
+    });
 
     const response = await llmProvider.generateContent(generationConfig);
     let assistantText = response.text || "";
-
-    // console.log("DEBUG: Respuesta LLM:", {
-    //   text: assistantText?.substring(0, 100) + "...",
-    //   hasFunctionCalls: !!(
-    //     response.functionCalls && response.functionCalls.length > 0
-    //   ),
-    //   functionCallsCount: response.functionCalls?.length || 0,
-    // });
+    
+    console.log("DEBUG: Respuesta del LLM:", {
+      hasText: !!response.text,
+      text: response.text,
+      textLength: response.text?.length,
+      hasFunctionCalls: !!(response.functionCalls && response.functionCalls.length > 0),
+      functionCallsLength: response.functionCalls?.length || 0
+    });
 
     // 7. Procesar function calls si existen
     let functionCallResults: any[] = [];
@@ -165,34 +169,60 @@ export class ConversationOrchestrator {
       }
     }
 
-    // 8. Guardamos la respuesta del asistente
+    // 8. SOLUCIÓN CRÍTICA: Si no hay texto Y no hay function calls, generar respuesta sin herramientas
+    if (!assistantText && (!response.functionCalls || response.functionCalls.length === 0)) {
+      console.log("DEBUG: Regenerando respuesta sin herramientas para mensaje simple");
+      
+      const fallbackResponse = await llmProvider.generateContent({
+        prompt: augmentedPrompt,
+        // No incluir herramientas para forzar respuesta de conversación normal
+      });
+      
+      assistantText = fallbackResponse.text || "Lo siento, no pude generar una respuesta en este momento.";
+      
+      console.log("DEBUG: Respuesta fallback generada:", {
+        hasText: !!fallbackResponse.text,
+        textLength: fallbackResponse.text?.length
+      });
+    }
+
+    // 9. Preparar datos MCP en formato simplificado ANTES de guardar el mensaje
+    const mcpData: MCPToolResult[] = functionCallResults.map((result: any) => {
+      const toolResult: MCPToolResult = {
+        toolName: result.name,
+        callId: `call_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        success: !!result.response && !result.response.error,
+        data: {
+          params: result.response?.params || {},
+          totalRegistros: result.response?.totalCount || result.response?.totalRegistros || 0
+        }
+      };
+      
+      // Solo agregar error si existe
+      if (result.response?.error) {
+        toolResult.error = result.response.error;
+      }
+      
+      return toolResult;
+    });
+
+    // 10. Guardamos la respuesta del asistente con data si existe
     const assistantDocId = await MessageManager.saveAssistantMessage(
       firestore,
       chatId,
-      assistantText
+      assistantText,
+      mcpData.length > 0 ? mcpData : undefined
     );
 
-    // 9. Actualizamos la fecha del chat
+    // 11. Actualizamos la fecha del chat
     await ChatManager.updateChatTimestamp(firestore, chatId);
-
-    // 10. Preparar datos MCP en formato simplificado
-    const mcpData: MCPToolResult[] = functionCallResults.map((result: any) => ({
-      toolName: result.name,
-      callId: `call_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-      success: !!result.response && !result.response.error,
-      data: {
-        params: result.response?.params || {},
-        totalRegistros: result.response?.totalCount || result.response?.totalRegistros || 0
-      },
-      error: result.response?.error
-    }));
 
     console.log("DEBUG ConversationOrchestrator: MCP data preparada:", {
       toolCallsCount: mcpData.length,
       tools: mcpData.map(d => ({ toolName: d.toolName, success: d.success }))
     });
 
-    // 11. Devolvemos la respuesta con campo data[] si hay resultados MCP
+    // 12. Devolvemos la respuesta con campo data[] si hay resultados MCP
     const responseData: ChatResponseWithData = {
       id: assistantDocId,
       role: "assistant" as const,

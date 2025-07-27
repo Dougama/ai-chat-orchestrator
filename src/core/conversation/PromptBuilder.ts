@@ -22,6 +22,8 @@ export const buildAugmentedPrompt = (
     en el CONTEXTO_DATOS y el HISTORIAL_CONVERSACION.
     
     IMPORTANTE: Tienes acceso a herramientas específicas para consultar información del sistema y realizar tareas.
+    - SOLO usa herramientas cuando el usuario solicite información específica que requiera consultarlas
+    - Para saludos, despedidas o conversación casual, responde directamente sin usar herramientas
     - Las herramientas te permiten acceder a información actualizada del sistema (novedades, rendimientos, compensaciones, etc.).
     - Cuando uses herramientas, los datos se mostrarán visualmente al usuario en una interfaz separada.
     
