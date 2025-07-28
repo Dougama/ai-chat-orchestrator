@@ -114,24 +114,14 @@ export class ConversationOrchestrator {
       }
     }
 
-    // 5. Enriquecer prompt con IntentionInterpreter usando TODAS las herramientas
-    console.log(`🧠 Analizando intención del usuario con LLM`);
-    const enhancedResult = await IntentionInterpreter.enhanceUserPrompt(
+    // 5. Traducir y perfeccionar prompt usando IntentionInterpreter como intermediario
+    console.log(`🔄 Traduciendo y perfeccionando prompt del usuario`);
+    const perfectedPrompt = await IntentionInterpreter.translateAndPerfect(
       request.prompt,
       centerId || "bogota",
-      tools, // ← Ahora recibe herramientas internas + MCP en formato GenAI
+      tools, // Herramientas internas + MCP en formato GenAI
       history,
       firestore
-    );
-
-    // 6. Construir prompt augmentado con historial (sin RAG automático)
-    console.log(`📝 Construyendo prompt final`);
-    const augmentedPrompt = buildAugmentedPrompt(
-      enhancedResult.originalPrompt,
-      enhancedResult.enhancedInstruction,
-      enhancedResult.toolType,
-      history,
-      []
     );
 
     // 8. Generamos la respuesta del asistente (con herramientas MCP si están disponibles)
@@ -141,7 +131,7 @@ export class ConversationOrchestrator {
     );
 
     const generationConfig = {
-      prompt: augmentedPrompt,
+      prompt: perfectedPrompt,
       trackTokens: true,
       chatId: chatId,
       ...(tools.length > 0 && {
@@ -189,7 +179,7 @@ export class ConversationOrchestrator {
       if (functionCallResults.length > 0) {
         // Generar respuesta final con resultados de herramientas
         const finalResponse = await this.generateFinalResponse(
-          augmentedPrompt,
+          perfectedPrompt,
           functionCallResults,
           tools,
           centerId || "default"
@@ -208,7 +198,7 @@ export class ConversationOrchestrator {
       );
 
       const fallbackResponse = await llmProvider.generateContent({
-        prompt: augmentedPrompt,
+        prompt: perfectedPrompt,
         trackTokens: true,
         chatId: chatId,
         // No incluir herramientas para forzar respuesta de conversación normal
@@ -339,7 +329,7 @@ export class ConversationOrchestrator {
    * Genera respuesta final incorporando resultados de herramientas
    */
   private static async generateFinalResponse(
-    originalPrompt: string,
+    perfectedPrompt: string,
     functionCallResults: any[],
     tools: any[],
     centerId: string
@@ -367,23 +357,32 @@ export class ConversationOrchestrator {
     if (hasRAGTools && !hasMCPTools) {
       // Solo herramientas RAG: respuesta completa y explicativa
       enhancedPrompt = `
-        ${originalPrompt}
+        ${perfectedPrompt}
         
         INFORMACIÓN ENCONTRADA EN LA DOCUMENTACIÓN:
         ${toolResultsText}
         
+        INSTRUCCIONES ADICIONALES:
+        - La información de arriba complementa tu consulta perfeccionada
+        - Mantén el enfoque y tipo de respuesta ya definido en tu prompt
+        - Integra la información de manera natural
       `;
     } else if (hasMCPTools) {
       // Herramientas MCP: respuesta de análisis con referencia a tarjetas
       enhancedPrompt = `
-        ${originalPrompt}
+        ${perfectedPrompt}
         
         DATOS DE HERRAMIENTAS EJECUTADAS:
         ${toolResultsText}
+        
+        INSTRUCCIONES ADICIONALES:
+        - Los datos de arriba complementan tu consulta perfeccionada
+        - Mantén el enfoque de análisis ya definido en tu prompt
+        - Integra los datos de manera natural
       `;
     } else {
       // Fallback genérico
-      enhancedPrompt = `${originalPrompt}\n\nDATOS: ${toolResultsText}`;
+      enhancedPrompt = `${perfectedPrompt}\n\nDATOS ADICIONALES: ${toolResultsText}`;
     }
 
     return await llmProvider.generateContent({

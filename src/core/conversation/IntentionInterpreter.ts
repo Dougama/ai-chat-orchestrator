@@ -255,4 +255,146 @@ Ahora analiza la consulta proporcionada y responde con el JSON estructurado.
       };
     }
   }
+
+  /**
+   * Traduce y perfecciona el prompt del usuario actuando como intermediario inteligente
+   * @param originalPrompt Prompt original del usuario
+   * @param centerId ID del centro para LLM
+   * @param availableTools Todas las herramientas disponibles (internas + MCP)
+   * @param history Historial de conversación
+   * @param firestore Instancia de Firestore
+   * @returns Prompt perfeccionado listo para el LLM
+   */
+  static async translateAndPerfect(
+    originalPrompt: string,
+    centerId: string,
+    availableTools: any[] = [],
+    history: ChatMessage[] = [],
+    firestore?: Firestore
+  ): Promise<string> {
+    try {
+      console.log(
+        `🔄 IntentionInterpreter: Traduciendo y perfeccionando "${originalPrompt}"`
+      );
+
+      const translatedPrompt = await this.performTranslation(
+        originalPrompt,
+        centerId,
+        availableTools,
+        history,
+        firestore
+      );
+
+      console.log(
+        `✅ IntentionInterpreter: Prompt perfeccionado generado`
+      );
+
+      return translatedPrompt;
+    } catch (error) {
+      console.error(
+        `❌ IntentionInterpreter: Error en traducción, usando prompt original:`,
+        error
+      );
+      // Fallback: devolver el prompt original con instrucciones básicas
+      return `${originalPrompt}
+
+## ROL Y CONTEXTO
+Eres un asistente especializado en logística de reparto. Responde de manera clara y útil basándote en tu conocimiento y las herramientas disponibles.
+
+Consulta del usuario: ${originalPrompt}`;
+    }
+  }
+
+  /**
+   * Realiza la traducción inteligente del prompt usando LLM
+   */
+  private static async performTranslation(
+    originalPrompt: string,
+    centerId: string,
+    availableTools: any[],
+    history: ChatMessage[],
+    firestore?: Firestore
+  ): Promise<string> {
+    // Construir contexto conversacional
+    const recentContext = history
+      ?.slice(-5)
+      .map(
+        (msg) =>
+          `${msg.role === "user" ? "Usuario" : "Asistente"}: ${msg.content}`
+      )
+      .join("\n") || "Sin historial previo";
+
+    // Separar herramientas por tipo
+    const internalTools = availableTools.filter(tool => tool.name === "buscar_informacion_operacional");
+    const mcpTools = availableTools.filter(tool => tool.name !== "buscar_informacion_operacional");
+
+    // Construir lista de herramientas disponibles
+    const toolsList = [
+      ...internalTools.map(tool => `- ${tool.name}: ${tool.description} (INTERNA)`),
+      ...mcpTools.map(tool => `- ${tool.name}: ${tool.description} (MCP)`)
+    ].join("\n") || "No hay herramientas disponibles";
+
+    const translationPrompt = `
+Eres un TRADUCTOR INTELIGENTE especializado en convertir consultas de usuarios en prompts perfectos para un LLM de logística.
+
+## CONTEXTO CONVERSACIONAL RECIENTE
+${recentContext}
+
+## HERRAMIENTAS DISPONIBLES
+${toolsList}
+
+## TU MISIÓN
+Toma la consulta del usuario y créa un prompt perfeccionado que:
+1. **Interprete la intención real** considerando el contexto conversacional
+2. **Identifique qué herramientas usar** y cómo usarlas
+3. **Proporcione instrucciones claras** al LLM sobre cómo responder
+4. **Maneje la continuidad conversacional** (referencias como "ahora", "también", etc.)
+
+## CONSULTA DEL USUARIO A TRADUCIR
+"${originalPrompt}"
+
+## REGLAS DE TRADUCCIÓN
+
+### PARA HERRAMIENTAS INTERNAS (Documentación):
+- Si la consulta requiere información de procesos, políticas o procedimientos
+- Instrúyele que use "buscar_informacion_operacional" 
+- Pídele una respuesta COMPLETA y DETALLADA
+- NO mencionar tarjetas
+
+### PARA HERRAMIENTAS MCP (Datos dinámicos):
+- Si la consulta requiere datos específicos, métricas o rendimientos
+- Instrúyele qué herramienta MCP usar con qué parámetros
+- Pídele un ANÁLISIS conciso 
+- Que termine invitando a ver las tarjetas
+
+### PARA CONSULTAS CONVERSACIONALES:
+- Si son saludos, agradecimientos o conversación casual
+- Instrúyele que responda naturalmente sin herramientas
+
+## FORMATO DE RESPUESTA
+Devuelve ÚNICAMENTE el prompt perfeccionado listo para ser usado por el LLM, sin explicaciones adicionales.
+
+El prompt debe incluir:
+- Rol y contexto del LLM
+- La acción específica a realizar
+- Instrucciones sobre herramientas si aplica
+- Guía sobre el tipo de respuesta esperada
+`;
+
+    const llmProvider = GoogleGenAIManager.getProvider(centerId, firestore);
+    const response = await llmProvider.generateContent({
+      prompt: translationPrompt,
+      trackTokens: false,
+      config: {
+        temperature: 0.4,
+        maxOutputTokens: 800,
+        topK: 30,
+        topP: 0.9,
+      },
+    });
+
+    return response.text || `${originalPrompt}
+
+Eres un asistente de logística. Responde útilmente.`;
+  }
 }
