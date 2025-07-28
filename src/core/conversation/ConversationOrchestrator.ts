@@ -57,11 +57,11 @@ export class ConversationOrchestrator {
     // 2. Guardamos el nuevo mensaje del usuario
     await MessageManager.saveUserMessage(firestore, chatId, request.prompt);
 
-    // 3. Recuperamos el historial reciente para el contexto
+    // 3. Recuperamos el historial reciente para el contexto (aumentado para mejor continuidad)
     const history = await MessageManager.getRecentHistory(
       firestore,
       chatId,
-      10
+      80  // Aumentado a 80 para mantener contexto completo de conversaciones largas
     );
 
     // 4. Ejecutamos el pipeline de RAG
