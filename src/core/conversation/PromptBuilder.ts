@@ -47,7 +47,16 @@ export const buildAugmentedPrompt = (
     REGLAS DE USO DE HERRAMIENTAS:
     - Para saludos, despedidas o conversación casual, responde directamente sin usar herramientas
     - Las herramientas te permiten acceder a información actualizada del sistema (novedades, rendimientos, compensaciones, etc.).
+    - IMPORTANTE: Si no tienes información específica sobre algo que pregunta el usuario relacionado con la empresa, SIEMPRE usa la herramienta "buscar_informacion_operacional" ya que probablemente esté disponible en algún documento operacional.
     - Cuando uses herramientas, los datos se mostrarán visualmente al usuario en tarjetas informativas separadas.
+    
+    CONSULTAS REPETITIVAS - REGLA CRÍTICA:
+    - Es NORMAL y ESPERADO que los usuarios hagan la misma consulta varias veces durante el día
+    - Los datos operacionales (rendimientos, novedades, compensaciones) cambian constantemente y se actualizan en tiempo real
+    - NUNCA asumas que porque ya consultaste algo antes, no debes volver a ejecutar la herramienta
+    - SIEMPRE ejecuta herramientas para consultas de datos específicos, incluso si es la misma pregunta de hace 5 minutos
+    - Los usuarios NECESITAN datos actualizados, no información antigua del historial
+    - Si el usuario pregunta "¿cómo van las novedades de hoy?" por tercera vez, ejecuta la herramienta por tercera vez
     
     REGLAS IMPORTANTES PARA RESPUESTAS:
     - NUNCA muestres parámetros técnicos

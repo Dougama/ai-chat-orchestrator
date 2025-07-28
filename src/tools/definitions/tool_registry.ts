@@ -17,23 +17,22 @@ type ToolRegistry = {
 };
 
 export const toolRegistry: ToolRegistry = {
-  buscar_en_protocolos_pdf: {
+  buscar_informacion_operacional: {
     type: "LOCAL",
-    handlerPath: "../implementations/local/protocolSearch",
+    handlerPath: "../implementations/local/ragSearch",
     definition: {
-      name: "buscar_en_protocolos_pdf",
-      description:
-        "Busca información específica en los manuales de protocolos de logística.",
+      name: "buscar_informacion_operacional",
+      description: "Busca información operacional sobre procesos, procedimientos, políticas y conocimiento técnico necesario para resolver las necesidades y consultas del usuario. Utiliza esta herramienta cuando el usuario requiera información específica sobre operaciones, procesos de trabajo, normativas o cualquier conocimiento técnico operacional.",
       parameters: {
         type: "object",
         properties: {
-          query: {
+          consulta: {
             type: "string",
-            description: "Consulta a buscar en los protocolos PDF"
+            description: "Información operacional que necesitas buscar para resolver la consulta del usuario sobre procesos, procedimientos, normativas o conocimiento técnico"
           }
         },
-        required: ["query"]
-      },
-    },
-  },
+        required: ["consulta"]
+      }
+    }
+  }
 };

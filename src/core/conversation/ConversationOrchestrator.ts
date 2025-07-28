@@ -2,7 +2,8 @@ import { ChatMessage, MCPToolResult, ChatResponseWithData } from "../../types";
 import { ChatRequest, ChatWithMessages } from "../chat/interfaces";
 import { ChatManager } from "../chat/ChatManager";
 import { MessageManager } from "../chat/MessageManager";
-import { RAGPipeline } from "../rag/RAGPipeline";
+import { buildAugmentedPrompt } from "./PromptBuilder";
+import { IntentionInterpreter } from "./IntentionInterpreter";
 import { GoogleGenAIManager } from "../llm/GoogleGenAIManager";
 import { MCPConnectionManager } from "../mcp/MCPConnectionManager";
 import { MCPAdapter } from "../mcp/MCPAdapter";
@@ -64,16 +65,34 @@ export class ConversationOrchestrator {
       80  // Aumentado a 80 para mantener contexto completo de conversaciones largas
     );
 
-    // 4. Ejecutamos el pipeline de RAG
-    const augmentedPrompt = await RAGPipeline.executeRAGPipeline(
-      firestore,
-      request.prompt,
-      history,
-      centerId || "bogota",
-      chatId
-    );
+    // 4. Obtener herramientas MCP disponibles para el IntentionInterpreter
+    let availableMCPTools: any[] = [];
+    if (centerId) {
+      try {
+        const mcpTools = await this.mcpConnectionManager.getAvailableTools(centerId);
+        availableMCPTools = this.mcpAdapter.filterValidMCPTools(mcpTools).map(tool => ({
+          name: tool.name,
+          description: tool.description
+        }));
+      } catch (error) {
+        console.warn(`Error obteniendo herramientas MCP para IntentionInterpreter:`, error);
+      }
+    }
 
-    // 5. Preparamos herramientas (internas + MCP)
+    // 5. Enriquecer prompt con IntentionInterpreter si es necesario
+    console.log(`🧠 Analizando intención del usuario con LLM`);
+    const enhancedPrompt = await IntentionInterpreter.enhanceUserPrompt(
+      request.prompt, 
+      centerId || "bogota",
+      availableMCPTools,
+      firestore
+    );
+    
+    // 6. Construir prompt augmentado con historial (sin RAG automático)
+    console.log(`📝 Construyendo prompt final`);
+    const augmentedPrompt = buildAugmentedPrompt(enhancedPrompt, history, []);
+
+    // 7. Preparamos herramientas (internas + MCP)
     let tools: any[] = [];
     let mcpConnection: MCPConnection | null = null;
 
@@ -114,7 +133,7 @@ export class ConversationOrchestrator {
       }
     }
 
-    // 6. Generamos la respuesta del asistente (con herramientas MCP si están disponibles)
+    // 8. Generamos la respuesta del asistente (con herramientas MCP si están disponibles)
     const llmProvider = GoogleGenAIManager.getProvider(centerId || 'default', firestore);
 
     const generationConfig = {
@@ -266,7 +285,7 @@ export class ConversationOrchestrator {
         
         if (isInternalTool) {
           // Ejecutar herramienta interna
-          const result = await this.executeInternalTool(firestore, chatId, toolName, callParams);
+          const result = await this.executeInternalTool(firestore, chatId, centerId, toolName, callParams);
           if (result) {
             results.push(result);
           }
@@ -418,13 +437,27 @@ export class ConversationOrchestrator {
   private static async executeInternalTool(
     firestore: Firestore,
     chatId: string,
+    centerId: string,
     toolName: string,
     callParams: any
   ): Promise<any> {
     console.log(`ConversationOrchestrator: Ejecutando herramienta interna: ${toolName}`);
     
     try {
-      // Agregar más herramientas internas aquí en el futuro
+      // Importar dinámicamente el handler RAG
+      if (toolName === 'buscar_informacion_operacional') {
+        const { executeRAGSearch } = await import('../../tools/implementations/local/ragSearch');
+        
+        // Usar centerId del parámetro
+        
+        const result = await executeRAGSearch(firestore, chatId, centerId, callParams);
+        
+        return {
+          name: toolName,
+          response: result
+        };
+      }
+      
       console.warn(`ConversationOrchestrator: Herramienta interna no implementada: ${toolName}`);
       return null;
       
@@ -433,6 +466,7 @@ export class ConversationOrchestrator {
       return {
         name: toolName,
         response: {
+          success: false,
           error: error instanceof Error ? error.message : 'Error desconocido'
         }
       };

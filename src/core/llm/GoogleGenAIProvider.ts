@@ -1,10 +1,17 @@
 import { GoogleGenAI } from "@google/genai";
-import { ILLMProvider, IEmbeddingProvider, GenerationRequest, GenerationResponse, EmbeddingRequest, EmbeddingResponse } from "./interfaces";
+import {
+  ILLMProvider,
+  IEmbeddingProvider,
+  GenerationRequest,
+  GenerationResponse,
+  EmbeddingRequest,
+  EmbeddingResponse,
+} from "./interfaces";
 import { TokenTrackingService } from "../tracking/TokenTrackingService";
 import { Firestore } from "@google-cloud/firestore";
 
 const EMBEDDING_MODEL = "text-embedding-004";
-const GENERATIVE_MODEL_ID = "gemini-2.0-flash-001";
+const GENERATIVE_MODEL_ID = "gemini-2.5-flash-lite";
 
 // Configuración multi-tenant
 interface ProviderConfig {
@@ -30,7 +37,9 @@ if (PROJECT_ID) {
 
 export async function getEmbedding(text: string) {
   if (!legacyAi) {
-    throw new Error("GoogleGenAI no está configurado. Use GoogleGenAIManager.getProvider(centerId) en su lugar.");
+    throw new Error(
+      "GoogleGenAI no está configurado. Use GoogleGenAIManager.getProvider(centerId) en su lugar."
+    );
   }
   try {
     const response = await legacyAi.models.embedContent({
@@ -49,7 +58,9 @@ export async function getEmbedding(text: string) {
 
 export const aiGenerateContent = async (prompt: string): Promise<string> => {
   if (!legacyAi) {
-    throw new Error("GoogleGenAI no está configurado. Use GoogleGenAIManager.getProvider(centerId) en su lugar.");
+    throw new Error(
+      "GoogleGenAI no está configurado. Use GoogleGenAIManager.getProvider(centerId) en su lugar."
+    );
   }
   const response = await legacyAi.models.generateContent({
     model: GENERATIVE_MODEL_ID,
@@ -80,15 +91,19 @@ export class GoogleGenAIProvider implements ILLMProvider {
       // Legacy mode
       this.ai = legacyAi;
       this.config = {
-        centerId: 'default',
+        centerId: "default",
         projectId: PROJECT_ID!,
-        location: LOCATION
+        location: LOCATION,
       };
     } else {
-      throw new Error("GoogleGenAIProvider requiere una instancia de GoogleGenAI");
+      throw new Error(
+        "GoogleGenAIProvider requiere una instancia de GoogleGenAI"
+      );
     }
   }
-  async generateContent(request: GenerationRequest): Promise<GenerationResponse> {
+  async generateContent(
+    request: GenerationRequest
+  ): Promise<GenerationResponse> {
     const generateConfig: any = {
       model: GENERATIVE_MODEL_ID,
       contents: request.prompt,
@@ -98,41 +113,51 @@ export class GoogleGenAIProvider implements ILLMProvider {
         topK: request.config?.topK || 40,
         topP: request.config?.topP || 0.95,
         // Agregar herramientas si están presentes
-        ...(request.tools && request.tools.length > 0 && { tools: request.tools }),
-        ...(request.toolConfig && { toolConfig: request.toolConfig })
+        ...(request.tools &&
+          request.tools.length > 0 && { tools: request.tools }),
+        ...(request.toolConfig && { toolConfig: request.toolConfig }),
       },
     };
 
     const response = await this.ai.models.generateContent(generateConfig);
-    
-    console.log('DEBUG GoogleGenAIProvider: Response raw:', {
+
+    console.log("DEBUG GoogleGenAIProvider: Response raw:", {
       hasText: !!response?.text,
       text: response?.text,
       hasFunctionCalls: !!response?.functionCalls,
       functionCallsLength: response?.functionCalls?.length || 0,
       functionCallsRaw: response?.functionCalls,
-      usageMetadata: response?.usageMetadata
+      usageMetadata: response?.usageMetadata,
     });
-    
+
     // Track token usage if enabled
-    if (request.trackTokens && request.chatId && response.usageMetadata && this.config.firestore) {
-      await TokenTrackingService.trackUsage(this.config.firestore, request.chatId, {
-        promptTokens: response.usageMetadata.promptTokenCount || 0,
-        candidatesTokens: response.usageMetadata.candidatesTokenCount || 0,
-        totalTokens: response.usageMetadata.totalTokenCount || 0,
-        operation: 'generateContent',
-        model: GENERATIVE_MODEL_ID,
-        trafficType: response.usageMetadata.trafficType
-      });
+    if (
+      request.trackTokens &&
+      request.chatId &&
+      response.usageMetadata &&
+      this.config.firestore
+    ) {
+      await TokenTrackingService.trackUsage(
+        this.config.firestore,
+        request.chatId,
+        {
+          promptTokens: response.usageMetadata.promptTokenCount || 0,
+          candidatesTokens: response.usageMetadata.candidatesTokenCount || 0,
+          totalTokens: response.usageMetadata.totalTokenCount || 0,
+          operation: "generateContent",
+          model: GENERATIVE_MODEL_ID,
+          trafficType: response.usageMetadata.trafficType,
+        }
+      );
     }
-    
+
     if (!response || (!response.text && !response.functionCalls)) {
       throw new Error("No se generó contenido.");
     }
-    
+
     return {
       text: response.text || "",
-      functionCalls: response.functionCalls || []
+      functionCalls: response.functionCalls || [],
     };
   }
 
@@ -141,36 +166,54 @@ export class GoogleGenAIProvider implements ILLMProvider {
       // Count tokens for embedding if tracking is enabled
       let tokenCount = 0;
       if (request.trackTokens && request.chatId && this.config.firestore) {
-        // Use a simple estimation for embedding tokens since countTokens API 
+        // Use a simple estimation for embedding tokens since countTokens API
         // has different format requirements for embedding models
         // Rough approximation: 1 token ≈ 4 characters for text
         tokenCount = Math.ceil(request.text.length / 4);
-        console.log(`TokenTrackingService: Estimated ${tokenCount} tokens for embedding (${request.text.length} chars)`);
+        console.log(
+          `TokenTrackingService: Estimated ${tokenCount} tokens for embedding (${request.text.length} chars)`
+        );
       }
-      
+
       const response = await this.ai.models.embedContent({
         model: EMBEDDING_MODEL,
         contents: [request.text],
       });
-      
+
       // Track token usage if enabled
-      if (request.trackTokens && request.chatId && tokenCount > 0 && this.config.firestore) {
-        await TokenTrackingService.trackUsage(this.config.firestore, request.chatId, {
-          promptTokens: tokenCount,
-          candidatesTokens: 0,
-          totalTokens: tokenCount,
-          operation: 'embedding',
-          model: EMBEDDING_MODEL
-        });
+      if (
+        request.trackTokens &&
+        request.chatId &&
+        tokenCount > 0 &&
+        this.config.firestore
+      ) {
+        await TokenTrackingService.trackUsage(
+          this.config.firestore,
+          request.chatId,
+          {
+            promptTokens: tokenCount,
+            candidatesTokens: 0,
+            totalTokens: tokenCount,
+            operation: "embedding",
+            model: EMBEDDING_MODEL,
+          }
+        );
       }
-      
-      if (!response || !response.embeddings || response.embeddings.length === 0) {
+
+      if (
+        !response ||
+        !response.embeddings ||
+        response.embeddings.length === 0
+      ) {
         throw new Error("No se generó ningún embedding.");
       }
-      
+
       return { values: response.embeddings[0].values || [] };
     } catch (error) {
-      console.error(`Error generando embedding para centro ${this.config.centerId}:`, error);
+      console.error(
+        `Error generando embedding para centro ${this.config.centerId}:`,
+        error
+      );
       throw new Error("Error al generar embedding del texto");
     }
   }
