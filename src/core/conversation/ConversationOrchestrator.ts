@@ -231,12 +231,16 @@ export class ConversationOrchestrator {
       .map((result: any) => {
         const toolResult: MCPToolResult = {
           toolName: result.name,
-          callId: `call_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          callId: `call_${Date.now()}_${Math.random()
+            .toString(36)
+            .substr(2, 9)}`,
           success: !!result.response && !result.response.error,
           data: {
             params: result.response?.params || {},
             totalRegistros:
-              result.response?.totalCount || result.response?.totalRegistros || 0,
+              result.response?.totalCount ||
+              result.response?.totalRegistros ||
+              0,
           },
         };
 
@@ -343,8 +347,12 @@ export class ConversationOrchestrator {
     const llmProvider = GoogleGenAIManager.getProvider(centerId);
 
     // Identificar si hay herramientas RAG (internas) vs MCP
-    const hasRAGTools = functionCallResults.some(result => result.name === "buscar_informacion_operacional");
-    const hasMCPTools = functionCallResults.some(result => result.name !== "buscar_informacion_operacional");
+    const hasRAGTools = functionCallResults.some(
+      (result) => result.name === "buscar_informacion_operacional"
+    );
+    const hasMCPTools = functionCallResults.some(
+      (result) => result.name !== "buscar_informacion_operacional"
+    );
 
     // Crear prompt enriquecido con resultados de herramientas
     const toolResultsText = functionCallResults
@@ -364,14 +372,6 @@ export class ConversationOrchestrator {
         INFORMACIÓN ENCONTRADA EN LA DOCUMENTACIÓN:
         ${toolResultsText}
         
-        INSTRUCCIONES PARA LA RESPUESTA:
-        - Proporciona una respuesta COMPLETA y DETALLADA basada en la información encontrada
-        - Explica claramente los procesos, procedimientos o conceptos consultados
-        - Organiza la información de manera lógica y fácil de entender
-        - Incluye todos los detalles relevantes y pasos necesarios
-        - Sé didáctico y servicial en tu explicación
-        - NO menciones "tarjetas" ni "datos adicionales" - tu respuesta debe ser autosuficiente
-        - Enfócate en dar una respuesta útil y completa que resuelva la consulta del usuario
       `;
     } else if (hasMCPTools) {
       // Herramientas MCP: respuesta de análisis con referencia a tarjetas
@@ -380,19 +380,6 @@ export class ConversationOrchestrator {
         
         DATOS DE HERRAMIENTAS EJECUTADAS:
         ${toolResultsText}
-        
-        INSTRUCCIONES PARA LA RESPUESTA:
-        - Los datos detallados arriba se mostrarán VISUALMENTE al usuario en tarjetas informativas debajo de tu respuesta
-        - NO reproduzcas/copies los datos en crudo (JSON, arrays, objetos, códigos, IDs, fechas exactas, etc.)
-        - NO enumeres/listes todos los registros o items individualmente 
-        - NO menciones parámetros técnicos como "params", "totalRegistros", "callId", etc.
-        - Haz un ANÁLISIS/RESUMEN conciso de los datos: totales, patrones, insights importantes, tendencias
-        - Menciona qué tipo de información encontraste y los principales hallazgos de negocio
-        - Interpreta los datos desde una perspectiva operacional/gerencial útil para el usuario
-        - SIEMPRE termina tu respuesta indicando al usuario que vea los detalles completos en las tarjetas de abajo
-        - Usa frases como: "Puedes ver todos los detalles en las tarjetas de información a continuación" o "Revisa los detalles completos en las tarjetas de abajo"
-        - Sé conciso pero informativo y útil
-        - Enfócate en interpretar los datos más que en mostrarlos
       `;
     } else {
       // Fallback genérico
