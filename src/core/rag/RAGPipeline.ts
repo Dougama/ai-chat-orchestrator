@@ -25,6 +25,8 @@ export class RAGPipeline {
     // 2. Augmentación del prompt
     const augmentedPrompt = buildAugmentedPrompt(
       prompt,
+      undefined, // enhancedInstruction
+      undefined, // toolType
       history,
       similarChunks
     );

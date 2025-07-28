@@ -2,7 +2,7 @@
  * Intérprete de intenciones que usa LLM para enriquecer prompts del usuario
  * cuando detecta necesidad de búsqueda operacional
  */
-
+import { ChatMessage } from "../../types";
 import { GoogleGenAIManager } from "../llm/GoogleGenAIManager";
 import { Firestore } from "@google-cloud/firestore";
 
@@ -13,166 +13,245 @@ interface MCPTool {
 }
 
 export class IntentionInterpreter {
-  
   /**
    * Enriquece el prompt del usuario usando LLM para detectar intención de búsqueda
    * @param originalPrompt Prompt original del usuario
    * @param centerId ID del centro para LLM
    * @param availableMCPTools Lista de herramientas MCP disponibles
    * @param firestore Instancia de Firestore
-   * @returns Prompt enriquecido o original
+   * @returns Objeto con prompt original, instrucción enriquecida y tipo de herramienta
    */
   static async enhanceUserPrompt(
-    originalPrompt: string, 
+    originalPrompt: string,
     centerId: string,
-    availableMCPTools: MCPTool[] = [],
+    availableTools: any[] = [], // Ahora recibe herramientas en formato GenAI
+    history: ChatMessage[] = [],
     firestore?: Firestore
-  ): Promise<string> {
+  ): Promise<{
+    originalPrompt: string;
+    enhancedInstruction?: string;
+    toolType?: string;
+  }> {
     try {
-      console.log(`🧠 IntentionInterpreter: Analizando intención para "${originalPrompt}"`);
-      
-      // Usar LLM para detectar y enriquecer
-      const needsSearch = await this.detectAndEnhanceWithLLM(originalPrompt, centerId, availableMCPTools, firestore);
-      
-      if (needsSearch.requiresSearch) {
-        console.log(`✅ IntentionInterpreter: Enriqueciendo prompt - ${needsSearch.reasoning}`);
-        
-        return `INSTRUCCIÓN OPERACIONAL: ${needsSearch.enhancedInstruction}
-
-CONSULTA ORIGINAL DEL USUARIO: ${originalPrompt}`;
+      // Detectar intención y determinar si requiere enriquecimiento
+      const analysisResult = await this.detectAndEnhanceWithLLM(
+        originalPrompt,
+        centerId,
+        availableTools,
+        history,
+        firestore
+      );
+      if (!analysisResult.requiresSearch) {
+        console.log(
+          `💬 IntentionInterpreter: Consulta directa - no requiere herramientas`
+        );
+        return { originalPrompt };
       }
-      
-      console.log(`💬 IntentionInterpreter: Prompt casual - no requiere enriquecimiento`);
-      return originalPrompt;
-      
+      // Retornar objeto con toda la información
+      console.log(
+        `✅ IntentionInterpreter: Ejecutando ${analysisResult.toolType} - ${analysisResult.reasoning}`
+      );
+
+      return {
+        originalPrompt,
+        enhancedInstruction: analysisResult.enhancedInstruction,
+        toolType: analysisResult.toolType,
+      };
     } catch (error) {
-      console.error("❌ IntentionInterpreter: Error en análisis, usando prompt original:", error);
-      return originalPrompt;
+      console.error(
+        "❌ IntentionInterpreter: Error en análisis, usando prompt original:",
+        error
+      );
+      return { originalPrompt };
     }
   }
-  
+
   /**
    * Usa LLM para detectar intención y generar instrucción enriquecida
    */
   private static async detectAndEnhanceWithLLM(
-    prompt: string, 
+    prompt: string,
     centerId: string,
-    availableMCPTools: MCPTool[],
+    availableTools: any[],
+    history: ChatMessage[],
     firestore?: Firestore
   ): Promise<{
+    toolType: any;
     requiresSearch: boolean;
     enhancedInstruction?: string;
     reasoning: string;
   }> {
     // Construir lista de herramientas disponibles
-    const mcpToolsList = availableMCPTools.length > 0 
-      ? availableMCPTools.map(tool => `- ${tool.name}: ${tool.description}`).join('\n')
-      : 'No hay herramientas MCP disponibles';
+    const recentContext =
+      history
+        ?.slice(-7)
+        .map(
+          (msg) =>
+            `${msg.role === "user" ? "Usuario" : "Asistente"}: ${msg.content}`
+        )
+        .join("\n") || "Sin historial previo";
 
+    const mcpTools = availableTools;
+
+    const mcpToolsList =
+      mcpTools.length > 0
+        ? mcpTools
+            .map((tool) => `- ${tool.name}: ${tool.description}`)
+            .join("\n")
+        : "No hay herramientas MCP disponibles";
+    console.log(
+      `🧠 IntentionInterpreter: Analizando intención para "${prompt} en detectAndEnhanceWithLLM"`,
+      `Herramientas disponibles: ${availableTools
+        .map((tool) => tool.name)
+        .join(", ")}`
+    );
     const analysisPrompt = `
-Analiza esta consulta de usuario y determina qué tipo de herramienta necesita ejecutar.
+Eres un ANALIZADOR DE INTENCIONES especializado en clasificar consultas de usuarios y determinar la herramienta más apropiada para responder.
 
-CONSULTA: "${prompt}"
+## CONTEXTO CONVERSACIONAL RECIENTE
+${recentContext}
+## IMPORTANTE: ANÁLISIS CONTEXTUAL
+- Si la consulta contiene referencias deícticas ("este", "eso", "y"), DEBES usar el contexto previo
+- Si la consulta es ambigua sin contexto, indica que necesitas más información
+- NO asumas herramientas basándote solo en palabras sueltas
 
-HERRAMIENTAS MCP DISPONIBLES:
+## CONTEXTO
+Tienes acceso a herramientas MCP dinámicas y una herramienta interna de búsqueda documental. Tu tarea es analizar cada consulta y decidir qué herramienta usar (o si no necesita ninguna).
+
+## CONSULTA A ANALIZAR
+"${prompt}"
+
+## HERRAMIENTAS DISPONIBLES
+
+### HERRAMIENTAS MCP (Datos Dinámicos)
 ${mcpToolsList}
 
-HERRAMIENTA INTERNA DISPONIBLE:
-- buscar_informacion_operacional: Busca información en manuales, protocolos, políticas, procedimientos y documentación operacional de la empresa
+### HERRAMIENTA INTERNA (Búsqueda Documental)
+- **buscar_informacion_operacional**: Accede a manuales, protocolos, políticas, procedimientos y documentación operacional empresarial
 
-CRITERIOS DE CLASIFICACIÓN:
+## REGLAS DE CLASIFICACIÓN
 
-1. HERRAMIENTA MCP ESPECÍFICA (consultas de datos dinámicos):
-   - Rendimientos de conductores, compensaciones, novedades
-   - Consultas con cédulas, códigos de cliente, fechas específicas
-   - Datos que cambian durante el día
-   - Si identifica una herramienta MCP específica, genera instrucción para usarla
+### 1. USA HERRAMIENTA MCP cuando:
+- La consulta requiere datos específicos en tiempo real
+- Se mencionan identificadores concretos (cédulas, IDs, fechas)
+- Se solicitan métricas, rendimientos o estadísticas actuales
+- La consulta implica operaciones con datos dinámicos
 
-2. HERRAMIENTA INTERNA (información en documentos):
-   - Procesos, procedimientos, normativas, políticas
-   - "¿Cómo hacer algo?", "¿Qué requisitos necesito?"
-   - Información técnica en manuales
-   - Protocolos de seguridad, operacionales
+### 2. USA HERRAMIENTA INTERNA cuando:
+- Se pregunta "¿Cómo hacer...?" o "¿Qué requisitos...?"
+- Se solicita información sobre procesos o procedimientos
+- Se necesitan políticas, normativas o protocolos
+- Se busca información técnica de manuales operacionales
 
-3. NO REQUIERE HERRAMIENTAS:
-   - Saludos, despedidas, cortesías
-   - Conversación casual sobre el estado
-   - Preguntas sobre el asistente mismo
+### 3. NO USES HERRAMIENTAS cuando:
+- Son saludos, despedidas o expresiones de cortesía
+- Conversación casual sin solicitud de información
+- Preguntas sobre el asistente o sus capacidades
 
-IMPORTANTE - CONSULTAS REPETITIVAS:
-- Si la misma consulta fue hecha antes, AÚN ASÍ debe ejecutar la herramienta
-- Los datos operacionales cambian constantemente durante el día
-- Es normal que los usuarios repitan consultas para datos actualizados
+## POLÍTICA DE CONSULTAS REPETIDAS
+⚠️ IMPORTANTE: Siempre ejecuta la herramienta aunque la consulta sea repetida
+- Los datos operacionales cambian constantemente
+- Los usuarios frecuentemente necesitan información actualizada
+- Cada consulta debe tratarse como nueva
 
-RESPONDE EN FORMATO JSON:
+## FORMATO DE RESPUESTA REQUERIDO
+Responde ÚNICAMENTE con este JSON estructurado:
+
 {
   "requiresSearch": true/false,
-  "enhancedInstruction": "Si requiresSearch=true, genera una instrucción específica para buscar la información operacional necesaria",
-  "reasoning": "Breve explicación de por qué sí o no requiere búsqueda"
+  "toolType": "MCP" | "INTERNAL" | "NONE",
+  "enhancedInstruction": "Instrucción detallada y específica para ejecutar la herramienta correcta (solo si requiresSearch=true)",
+  "reasoning": "Explicación concisa de la decisión tomada"
 }
 
-EJEMPLOS:
+## EJEMPLOS DE REFERENCIA
 
-EJEMPLO 1 - Herramienta MCP:
-Consulta: "Consulta los rendimientos de la cédula 1140845095 para julio"
-Respuesta: {
+### Ejemplo MCP - Consulta de datos específicos:
+Input: "Consulta los rendimientos de la cédula 1140845095 para julio"
+Output: {
   "requiresSearch": true,
-  "enhancedInstruction": "Ejecuta la herramienta MCP correspondiente para consultar rendimientos específicos de la cédula 1140845095 en el período de julio",
-  "reasoning": "Consulta de datos dinámicos con cédula específica - requiere herramienta MCP"
+  "toolType": "MCP",
+  "enhancedInstruction": "Utiliza la herramienta MCP de consulta de rendimientos para obtener los datos específicos de la cédula 1140845095 correspondientes al período de julio del año actual",
+  "reasoning": "Solicitud de datos dinámicos con identificador específico (cédula) y período temporal definido"
 }
 
-EJEMPLO 2 - Herramienta interna:
-Consulta: "¿Qué sabes sobre el alquiler de ocasionales?"
-Respuesta: {
+### Ejemplo INTERNAL - Información procedimental:
+Input: "¿Qué sabes sobre el alquiler de ocasionales?"
+Output: {
   "requiresSearch": true,
-  "enhancedInstruction": "Busca información operacional sobre procesos y requisitos para alquiler de vehículos ocasionales usando la herramienta interna",
-  "reasoning": "Pregunta sobre proceso operacional que requiere información en documentos"
+  "toolType": "INTERNAL",
+  "enhancedInstruction": "Busca en la documentación operacional toda la información disponible sobre el proceso de alquiler de vehículos ocasionales, incluyendo requisitos, procedimientos y políticas aplicables",
+  "reasoning": "Consulta sobre proceso operacional que requiere acceso a documentación interna de políticas y procedimientos"
 }
 
-EJEMPLO 3 - Sin herramientas:
-Consulta: "Hola, ¿cómo estás?"
-Respuesta: {
+### Ejemplo NONE - Interacción social:
+Input: "Hola, ¿cómo estás?"
+Output: {
   "requiresSearch": false,
-  "reasoning": "Saludo casual que no requiere herramientas"
+  "toolType": "NONE",
+  "enhancedInstruction": "",
+  "reasoning": "Saludo social que no requiere búsqueda de información ni uso de herramientas"
 }
+
+## INSTRUCCIONES FINALES
+1. Analiza cuidadosamente cada palabra clave en la consulta
+2. Identifica el tipo de información solicitada
+3. Selecciona la herramienta más apropiada según las reglas
+4. Genera instrucciones específicas y accionables
+5. Mantén el reasoning breve pero informativo
+
+## CRITICO
+- RESPONDER EN EL FORMATO JSON EXACTAMENTE COMO SE INDICA
+- NO PUEDES OMITIR CARACTERES IMPORTANTE DEL FORMATO, COMO LAS LLAVES {} ' ,
+
+Ahora analiza la consulta proporcionada y responde con el JSON estructurado.
 `;
 
     const llmProvider = GoogleGenAIManager.getProvider(centerId, firestore);
-    
+
     const response = await llmProvider.generateContent({
       prompt: analysisPrompt,
-      trackTokens: false, // No trackear tokens para análisis interno
       config: {
-        temperature: 0.1, // Baja temperatura para respuestas consistentes
-        maxOutputTokens: 200
-      }
+        temperature: 0.3, // Más flexibilidad para generar respuestas
+        maxOutputTokens: 500, // Más espacio para JSON y explicación
+        topK: 40,
+        topP: 0.8,
+      },
     });
-    
+
     try {
       // Extraer JSON de la respuesta
       const jsonMatch = response.text?.match(/\{[\s\S]*\}/);
       if (!jsonMatch) {
         throw new Error("No se encontró JSON válido en respuesta");
       }
-      
       const analysis = JSON.parse(jsonMatch[0]);
-      
+      console.log(
+        `🔍 Análisis de intención: ${JSON.stringify(analysis, null, 2)}`
+      );
       return {
         requiresSearch: analysis.requiresSearch || false,
+        toolType: analysis.toolType || "NONE",
         enhancedInstruction: analysis.enhancedInstruction || undefined,
-        reasoning: analysis.reasoning || "Sin razón especificada"
+        reasoning: analysis.reasoning || "Sin razón especificada",
       };
-      
     } catch (parseError) {
-      console.error("❌ IntentionInterpreter: Error parseando respuesta LLM:", parseError);
-      
+      console.error(
+        "❌ IntentionInterpreter: Error parseando respuesta LLM:",
+        parseError
+      );
       // Fallback simple si falla el parsing
-      const isObviousCasual = /^(hola|hi|buenos días|buenas tardes|gracias|ok|bien|mal)$/i.test(prompt.trim());
-      
+      const isObviousCasual =
+        /^(hola|hi|buenos días|buenas tardes|gracias|ok|bien|mal)$/i.test(
+          prompt.trim()
+        );
       return {
         requiresSearch: !isObviousCasual,
-        enhancedInstruction: isObviousCasual ? undefined : `Busca información operacional relacionada con: ${prompt}`,
-        reasoning: "Fallback por error de parsing"
+        toolType: isObviousCasual ? "NONE" : "INTERNAL",
+        enhancedInstruction: isObviousCasual
+          ? undefined
+          : `Busca información operacional relacionada con: ${prompt}`,
+        reasoning: "Fallback por error de parsing",
       };
     }
   }
