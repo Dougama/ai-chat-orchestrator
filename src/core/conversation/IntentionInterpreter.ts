@@ -4,6 +4,7 @@
  */
 import { ChatMessage } from "../../types";
 import { GoogleGenAIManager } from "../llm/GoogleGenAIManager";
+import { MessageManager } from "../chat/MessageManager";
 import { Firestore } from "@google-cloud/firestore";
 
 interface MCPTool {
@@ -82,14 +83,9 @@ export class IntentionInterpreter {
     reasoning: string;
   }> {
     // Construir lista de herramientas disponibles
-    const recentContext =
-      history
-        ?.slice(-7)
-        .map(
-          (msg) =>
-            `${msg.role === "user" ? "Usuario" : "Asistente"}: ${msg.content}`
-        )
-        .join("\n") || "Sin historial previo";
+    const recentContext = history?.length > 0 
+      ? MessageManager.formatHistoryForLLM(history.slice(-7))
+      : "Sin historial previo";
 
     const mcpTools = availableTools;
 
@@ -316,13 +312,9 @@ Consulta del usuario: ${originalPrompt}`;
     firestore?: Firestore
   ): Promise<string> {
     // Construir contexto conversacional
-    const recentContext = history
-      ?.slice(-5)
-      .map(
-        (msg) =>
-          `${msg.role === "user" ? "Usuario" : "Asistente"}: ${msg.content}`
-      )
-      .join("\n") || "Sin historial previo";
+    const recentContext = history?.length > 0
+      ? MessageManager.formatHistoryForLLM(history.slice(-5))
+      : "Sin historial previo";
 
     // Separar herramientas por tipo
     const internalTools = availableTools.filter(tool => tool.name === "buscar_informacion_operacional");

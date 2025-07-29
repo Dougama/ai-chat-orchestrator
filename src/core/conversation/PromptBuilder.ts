@@ -1,4 +1,5 @@
 import { ChatMessage } from "../../types";
+import { MessageManager } from "../chat/MessageManager";
 
 export const buildAugmentedPrompt = (
   originalPrompt: string,
@@ -7,11 +8,7 @@ export const buildAugmentedPrompt = (
   history: ChatMessage[],
   contextChunks: any[]
 ): string => {
-  const historyText = history
-    .map(
-      (msg) => `${msg.role === "user" ? "Humano" : "Asistente"}: ${msg.content}`
-    )
-    .join("\n");
+  const historyText = MessageManager.formatHistoryForLLM(history);
   const contextText = contextChunks
     .map((neighbor) => neighbor.text)
     .join("\n---\n");

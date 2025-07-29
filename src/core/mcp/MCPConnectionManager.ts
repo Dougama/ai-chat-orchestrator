@@ -14,13 +14,10 @@ export class MCPConnectionManager implements IMCPConnectionManager {
    * Establece conexión con servidor MCP del centro
    */
   async connectToCenter(centerId: string): Promise<MCPConnection> {
-    console.log(`MCPConnectionManager: Conectando a centro ${centerId}`);
-    
     try {
       // Verificar si ya existe conexión activa
       const existingConnection = this.connections.get(centerId);
       if (existingConnection && existingConnection.isConnected) {
-        console.log(`MCPConnectionManager: Conexión existente para ${centerId}`);
         return existingConnection;
       }
 
@@ -44,14 +41,12 @@ export class MCPConnectionManager implements IMCPConnectionManager {
         this.connections.set(centerId, connection);
         this.startHealthCheck(centerId);
         
-        console.log(`MCPConnectionManager: Conexión exitosa a ${centerId}`);
         return connection;
       } else {
         connection.serverStatus = 'error';
         throw new Error(`No se pudo conectar al servidor MCP del centro ${centerId}`);
       }
     } catch (error) {
-      console.error(`MCPConnectionManager: Error conectando a ${centerId}:`, error);
       throw error;
     }
   }
@@ -60,12 +55,9 @@ export class MCPConnectionManager implements IMCPConnectionManager {
    * Obtiene herramientas disponibles del centro
    */
   async getAvailableTools(centerId: string): Promise<MCPTool[]> {
-    console.log(`MCPConnectionManager: Obteniendo herramientas para ${centerId}`);
-    
     // Intentar obtener desde cache
     const cachedTools = this.toolCache.getCachedTools(centerId);
     if (cachedTools) {
-      console.log(`MCPConnectionManager: Herramientas obtenidas desde cache para ${centerId}`);
       return cachedTools;
     }
 
@@ -81,7 +73,6 @@ export class MCPConnectionManager implements IMCPConnectionManager {
     // Cachear herramientas
     this.toolCache.cacheTools(centerId, tools);
     
-    console.log(`MCPConnectionManager: ${tools.length} herramientas obtenidas para ${centerId}`);
     return tools;
   }
 
@@ -89,8 +80,6 @@ export class MCPConnectionManager implements IMCPConnectionManager {
    * Ejecuta herramienta en servidor MCP
    */
   async executeToolCall(centerId: string, toolCall: MCPToolCall): Promise<MCPToolResult> {
-    console.log(`MCPConnectionManager: Ejecutando ${toolCall.toolName} en ${centerId}`);
-    
     try {
       // Verificar conexión
       const connection = this.connections.get(centerId);
@@ -101,11 +90,8 @@ export class MCPConnectionManager implements IMCPConnectionManager {
       // Simular ejecución de herramienta
       const result = await this.executeMCPTool(centerId, toolCall);
       
-      console.log(`MCPConnectionManager: Herramienta ${toolCall.toolName} ejecutada exitosamente`);
       return result;
     } catch (error) {
-      console.error(`MCPConnectionManager: Error ejecutando ${toolCall.toolName}:`, error);
-      
       return {
         toolName: toolCall.toolName,
         callId: toolCall.callId,
@@ -138,7 +124,6 @@ export class MCPConnectionManager implements IMCPConnectionManager {
       
       return isHealthy;
     } catch (error) {
-      console.error(`MCPConnectionManager: Health check failed for ${centerId}:`, error);
       connection.serverStatus = 'error';
       connection.isConnected = false;
       return false;
@@ -149,8 +134,6 @@ export class MCPConnectionManager implements IMCPConnectionManager {
    * Desconecta del servidor MCP
    */
   async disconnect(centerId: string): Promise<void> {
-    console.log(`MCPConnectionManager: Desconectando de ${centerId}`);
-    
     const connection = this.connections.get(centerId);
     if (connection) {
       connection.isConnected = false;
@@ -204,14 +187,11 @@ export class MCPConnectionManager implements IMCPConnectionManager {
       });
       
       if (response.ok) {
-        console.log(`MCPConnectionManager: Conexión exitosa a ${connection.serverUrl}`);
         return true;
       } else {
-        console.warn(`MCPConnectionManager: Servidor MCP respondió con status ${response.status}`);
         return false;
       }
     } catch (error) {
-      console.error(`MCPConnectionManager: Error conectando a ${connection.serverUrl}:`, error);
       return false;
     }
   }
@@ -230,7 +210,6 @@ export class MCPConnectionManager implements IMCPConnectionManager {
       });
       
       if (!response.ok) {
-        console.error(`MCPConnectionManager: Error obteniendo tools: ${response.status}`);
         return [];
       }
       
@@ -247,11 +226,9 @@ export class MCPConnectionManager implements IMCPConnectionManager {
         }
       })) : [];
       
-      console.log(`MCPConnectionManager: Obtenidas ${tools.length} herramientas desde ${serverUrl}`);
       return tools;
       
     } catch (error) {
-      console.error(`MCPConnectionManager: Error obteniendo herramientas para ${centerId}:`, error);
       return [];
     }
   }
@@ -314,7 +291,6 @@ export class MCPConnectionManager implements IMCPConnectionManager {
             parsedMcpData = JSON.parse(textContent.text);
             data = parsedMcpData; // Mantener compatibilidad actual
           } catch (parseError) {
-            console.warn('MCPConnectionManager: No se pudo parsear JSON del contenido MCP:', parseError);
             data = { content: textContent.text };
             parsedMcpData = null;
           }
@@ -330,18 +306,10 @@ export class MCPConnectionManager implements IMCPConnectionManager {
         dataType: this.getDataTypeFromToolName(toolCall.toolName)
       };
       
-      console.log('DEBUG MCPConnectionManager: Resultado final:', {
-        toolName: toolResult.toolName,
-        dataType: toolResult.dataType,
-        hasMcpData: !!toolResult.mcpData,
-        mcpDataKeys: toolResult.mcpData ? Object.keys(toolResult.mcpData) : []
-      });
       
       return toolResult;
       
     } catch (error) {
-      console.error(`MCPConnectionManager: Error ejecutando ${toolCall.toolName}:`, error);
-      
       return {
         toolName: toolCall.toolName,
         callId: toolCall.callId,
@@ -365,7 +333,6 @@ export class MCPConnectionManager implements IMCPConnectionManager {
       
       return response.ok;
     } catch (error) {
-      console.error(`MCPConnectionManager: Ping failed for ${centerId}:`, error);
       return false;
     }
   }
@@ -377,19 +344,18 @@ export class MCPConnectionManager implements IMCPConnectionManager {
       clearInterval(existingTimeout);
     }
 
-    // Configurar health check cada 30 segundos
+    // Configurar health check cada 24 horas
     const timeout = setInterval(async () => {
       const healthy = await this.checkMCPHealth(centerId);
       if (!healthy) {
-        console.warn(`MCPConnectionManager: Health check failed for ${centerId}`);
         // Intentar reconectar
         try {
           await this.connectToCenter(centerId);
         } catch (error) {
-          console.error(`MCPConnectionManager: Reconexión fallida para ${centerId}:`, error);
+          // Reconexión fallida
         }
       }
-    }, 30000);
+    }, 24 * 60 * 60 * 1000);
 
     this.connectionTimeouts.set(centerId, timeout);
   }

@@ -120,15 +120,14 @@ export class GoogleGenAIProvider implements ILLMProvider {
     };
 
     const response = await this.ai.models.generateContent(generateConfig);
-
-    console.log("DEBUG generateContent: Response raw:", {
-      hasText: !!response?.text,
-      text: response?.text,
-      hasFunctionCalls: !!response?.functionCalls,
-      functionCallsLength: response?.functionCalls?.length || 0,
-      functionCallsRaw: response?.functionCalls,
-      usageMetadata: response?.usageMetadata,
-    });
+    // console.log("DEBUG generateContent: Response raw:", {
+    //   hasText: !!response?.text,
+    //   text: response?.text,
+    //   hasFunctionCalls: !!response?.functionCalls,
+    //   functionCallsLength: response?.functionCalls?.length || 0,
+    //   functionCallsRaw: response?.functionCalls,
+    //   usageMetadata: response?.usageMetadata,
+    // });
 
     // Track token usage if enabled
     if (

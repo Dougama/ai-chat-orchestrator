@@ -22,13 +22,15 @@ export class ChatManager {
 
     // Construimos la consulta base
     let query: FirebaseFirestore.Query = chatsCollection
-      .where('userId', '==', userId)
+      .where("userId", "==", userId)
       .orderBy("lastUpdatedAt", "desc"); // Siempre ordenamos por el más reciente
 
     // Si nos proporcionan un cursor (el timestamp del último chat visto),
     // le decimos a Firestore que empiece a buscar DESPUÉS de ese documento.
     if (lastChatTimestamp) {
-      const lastTimestamp = Timestamp.fromMillis(parseInt(lastChatTimestamp, 10));
+      const lastTimestamp = Timestamp.fromMillis(
+        parseInt(lastChatTimestamp, 10)
+      );
       query = query.startAfter(lastTimestamp);
     }
 
@@ -48,7 +50,11 @@ export class ChatManager {
   /**
    * Crea un nuevo chat
    */
-  static async createChat(firestore: Firestore, title: string, userId: string): Promise<string> {
+  static async createChat(
+    firestore: Firestore,
+    title: string,
+    userId: string
+  ): Promise<string> {
     console.log(`🔍 DEBUG ChatManager - Creating chat with userId: ${userId}`);
     const chatsCollection = firestore.collection("chats");
     const chatDoc = {
@@ -56,41 +62,53 @@ export class ChatManager {
       userId: userId,
       createdAt: Timestamp.now(),
     };
-    console.log(`🔍 DEBUG ChatManager - Chat document:`, chatDoc);
     const chatDocRef = await chatsCollection.add(chatDoc);
-    console.log(`🔍 DEBUG ChatManager - Chat created with ID: ${chatDocRef.id}`);
+    console.log(
+      `🔍 DEBUG ChatManager - Chat created with ID: ${chatDocRef.id}`
+    );
     return chatDocRef.id;
   }
 
   /**
    * Actualiza la fecha del chat
    */
-  static async updateChatTimestamp(firestore: Firestore, chatId: string): Promise<void> {
+  static async updateChatTimestamp(
+    firestore: Firestore,
+    chatId: string
+  ): Promise<void> {
     const chatsCollection = firestore.collection("chats");
-    await chatsCollection.doc(chatId).update({ lastUpdatedAt: Timestamp.now() });
+    await chatsCollection
+      .doc(chatId)
+      .update({ lastUpdatedAt: Timestamp.now() });
   }
 
   /**
    * Elimina un chat y todos sus mensajes (con validación de ownership)
    */
-  static async deleteUserChat(firestore: Firestore, chatId: string, userId?: string): Promise<void> {
+  static async deleteUserChat(
+    firestore: Firestore,
+    chatId: string,
+    userId?: string
+  ): Promise<void> {
     console.log(`Eliminando chat con ID: ${chatId} para usuario: ${userId}`);
-    
+
     const chatDocRef = firestore.collection("chats").doc(chatId);
-    
+
     // Si se proporciona userId, validar ownership
     if (userId) {
       const chatDoc = await chatDocRef.get();
       if (!chatDoc.exists) {
         throw new Error(`Chat ${chatId} no existe`);
       }
-      
+
       const chatData = chatDoc.data();
       if (chatData?.userId !== userId) {
-        throw new Error(`Usuario ${userId} no tiene permisos para eliminar el chat ${chatId}`);
+        throw new Error(
+          `Usuario ${userId} no tiene permisos para eliminar el chat ${chatId}`
+        );
       }
     }
-    
+
     // Primero, eliminar la subcolección de mensajes
     await this.deleteCollection(firestore, `chats/${chatId}/messages`, 50);
     // Luego, eliminar el documento principal del chat
@@ -101,7 +119,11 @@ export class ChatManager {
   /**
    * Helper para eliminar colecciones en lotes
    */
-  private static async deleteCollection(firestore: Firestore, collectionPath: string, batchSize: number) {
+  private static async deleteCollection(
+    firestore: Firestore,
+    collectionPath: string,
+    batchSize: number
+  ) {
     const collectionRef = firestore.collection(collectionPath);
     const query = collectionRef.limit(batchSize);
 

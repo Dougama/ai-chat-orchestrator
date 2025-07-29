@@ -84,4 +84,22 @@ export class MessageManager {
     const assistantDocRef = await messagesCollection.add(assistantMessageData);
     return assistantDocRef.id;
   }
+
+  /**
+   * Formatea el historial de chat para el LLM con timestamps
+   */
+  static formatHistoryForLLM(history: ChatMessage[]): string {
+    return history.map(msg => {
+      const role = msg.role === "user" ? "Humano" : "Asistente";
+      const timestamp = msg.timestamp.toLocaleString('es-CO', {
+        timeZone: 'America/Bogota',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+      return `[${timestamp}] ${role}: ${msg.content}`;
+    }).join('\n');
+  }
 }
