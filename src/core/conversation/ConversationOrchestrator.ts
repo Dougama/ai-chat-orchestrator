@@ -188,7 +188,8 @@ export class ConversationOrchestrator {
           callId: `call_${Date.now()}_${Math.random()
             .toString(36)
             .substr(2, 9)}`,
-          success: !!result.response && !result.response.error,
+          success:
+            result.response?.success !== false && !result.response?.error,
           data: {
             params: result.response?.params || {},
             totalRegistros:
@@ -198,9 +199,10 @@ export class ConversationOrchestrator {
           },
         };
 
-        // Solo agregar error si existe
+        // Agregar error si existe en cualquiera de los lugares posibles
         if (result.response?.error) {
           toolResult.error = result.response.error;
+          toolResult.success = false;
         }
 
         return toolResult;
@@ -474,7 +476,7 @@ export class ConversationOrchestrator {
     
 
     Ejecuta las herramientas necesarias considerando el contexto temporal y conversacional.
-    Si algun parametro requerido para una herramienta falta, no debes ejecutarla.
+    por favor analiza profundamente Si algun parametro requerido para una herramienta falta, no debes ejecutarla.
     La unica condicion para ejecutar una herramienta es que exista una relacion semantica entre el mensaje del usuario
     las herramientas disponibles y el historial reciente de la conversacion.
     <HISTORIAL_RECIENTE_DE_CONVERSACION>
@@ -487,8 +489,10 @@ export class ConversationOrchestrator {
       ${tools.map((t) => `- ${t.name}: ${t.description}`).join("\n")}
     </HERRAMIENTAS>
 
-    ROTUNDAMENTE PROHIBIDO EJECTURAR HERRAMIENTAS SI PARAMETROS REQUERIDOS FALTAN. 
-    SI EL USUARIO NO LOS PROPORCIONA, NO SE DEBE EJECUTAR LA HERRAMIENTA.
+
+   SOLO ejecutar herramientas si TODOS los parámetros requeridos están disponibles
+   Si falta algún parámetro requerido, NO ejecutar la herramienta
+    NO inventar datos ni usar valores genéricos
     
 `;
 
@@ -555,7 +559,7 @@ export class ConversationOrchestrator {
     y las herramientas disponibles segun su descripción para determinar la intención mas probable y definir con criterio
     lo que el usuario quiere lograr. y si una herramienta es necesaria o no.
     tu respuesta debe ser siempre en el mismo formato
-    
+    por favor analiza profundamente Si algun parametro requerido para una herramienta falta, sugiere pedir el dato.
     En caso del que no tengas claro la intencion del usuario, mira si el mensaje, revisa similitudes entre palabras claves entre las herramientas y lo que pide el usuario. 
 
     breve explicacion en una lista aparte una lista tipo

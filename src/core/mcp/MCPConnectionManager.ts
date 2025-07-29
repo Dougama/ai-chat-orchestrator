@@ -297,14 +297,21 @@ export class MCPConnectionManager implements IMCPConnectionManager {
         }
       }
       
-      const toolResult = {
+      const toolResult: any = {
         toolName: toolCall.toolName,
         callId: toolCall.callId,
-        success: true,
+        success: !result.error && !result.result?.isError,
         data,
         mcpData: parsedMcpData,
         dataType: this.getDataTypeFromToolName(toolCall.toolName)
       };
+      
+      // Agregar error si existe
+      if (result.error) {
+        toolResult.error = result.error.message || result.error;
+      } else if (result.result?.isError && result.result?.content?.[0]?.text) {
+        toolResult.error = result.result.content[0].text;
+      }
       
       
       return toolResult;
