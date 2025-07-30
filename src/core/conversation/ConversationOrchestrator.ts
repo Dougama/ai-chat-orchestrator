@@ -144,12 +144,16 @@ export class ConversationOrchestrator {
         topP: 0.95,
         systemInstruction: `
         Fecha y hora actual: ${new Date().toISOString()}
-        
+
         Eres Chelita, una asistente inteligente, amable y eficiente. Servicial y muy dispuesta a ayudar.
         Sabes explicar muy bien las cosas y siempre buscas la mejor solución.
         Tu objetivo es ayudar al usuario a resolver su consulta de la mejor manera posible en un lenguajo no muy tecnico.
         Olvida codigo o nombres de funciones o parametros, usa un lenguaje natural y amigable.
         las herramientas son tus capacidades y no algo a lo que te debas referir como ajeno.
+
+        las herramientas tienen descripciones que te ayudan a entender para que sirven. Analiza cuales parametros son requerido y cuales son opcionales..
+        no inventes datos ni uses valores genéricos, usa los datos que te dan las herramientas
+        no solicites al usuario parametros exactos brindale una solicitud intepretada por ti de lo que se requiere
 
         Analiza los resultados de las erramientas asegurate de tener todos los parametros necesarios para decidir ejecutar una herramienta.
         Si no los tienes pregunta o validalos con el usuario.
@@ -204,10 +208,12 @@ export class ConversationOrchestrator {
             `call_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
           success: result.success !== false && !result.error,
           data: {
-            params: result.response?.params || {}, // Parámetros enviados al MCP
+            params: result.response?.params || {},
             totalRegistros:
-              result.data?.total_registros || result.data?.totalRegistros || 0,
-            ...result.data, // Incluir todos los datos de la respuesta MCP
+              result.response?.total_registros ||
+              result.response?.totalCount ||
+              result.response?.totalRegistros ||
+              0,
           },
         };
 
@@ -220,22 +226,14 @@ export class ConversationOrchestrator {
         return toolResult;
       });
 
-    // 8. Preparar toolData para contexto nativo del historial (incluyendo RAG)
-    const toolDataForHistory = functionCallResults.reduce((acc, result) => {
-      acc[result.name] = {
-        params: result.response?.params || {},
-        ...result.data, // Datos completos de la respuesta MCP
-      };
-      return acc;
-    }, {} as { [toolName: string]: any });
+    // 8. Preparar toolData para contexto nativo del historial (excluyendo RAG)
+    const toolDataForHistory = functionCallResults
+      .filter((result: any) => result.name !== "buscar_informacion_operacional") // Excluir RAG
+      .reduce((acc, result) => {
+        acc[result.name] = result.response || {}; // Solo datos/resultados de la respuesta MCP
+        return acc;
+      }, {} as { [toolName: string]: any });
 
-    // Agregar resultados RAG al toolData si se ejecutó
-    if (ragResults.executed && ragResults.result) {
-      toolDataForHistory["buscar_informacion_operacional"] = {
-        params: ragResults.result.params || {},
-        ...ragResults.result.response,
-      };
-    }
 
     // 9. Guardamos la respuesta del asistente con data y toolData
     const saveStartTime = Date.now();
