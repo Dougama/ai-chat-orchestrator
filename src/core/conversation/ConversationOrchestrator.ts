@@ -59,8 +59,10 @@ export class ConversationOrchestrator {
     let tools: any[] = [];
     let mcpConnection: MCPConnection | null = null;
 
-    // Agregar herramientas internas
-    const internalTools = this.getInternalTools();
+    // Agregar herramientas internas (excluyendo RAG)
+    const internalTools = this.getInternalTools().filter(
+      (tool) => tool.name !== "buscar_informacion_operacional"
+    );
     tools.push(...internalTools);
 
     // Agregar herramientas MCP
@@ -94,127 +96,157 @@ export class ConversationOrchestrator {
       `🔧 Preparación herramientas (${tools.length} total): ${toolsTime}ms`
     );
 
-    // 5. ARQUITECTURA KISS: Doble intérprete paralelo SIMPLE
+    // 5. LLM1: Análisis RAG especializado
+    const ragStartTime = Date.now();
+    const ragResults = await this.executeRAGAnalysis(
+      request.prompt,
+      history,
+      centerId || "bogota",
+      firestore,
+      chatId
+    );
+    const ragTime = Date.now() - ragStartTime;
+    console.log(
+      `🔍 Análisis RAG: ${ragTime}ms${
+        ragResults.executed ? " (ejecutado)" : " (no necesario)"
+      }`
+    );
 
-    const interpretersStartTime = Date.now();
-    const [toolResult, intentionResult] = await Promise.allSettled([
-      // 1. Intérprete de herramientas - EJECUTA herramientas y retorna datos
-      this.executeToolInterpreter(
-        request.prompt,
-        tools,
-        history,
-        centerId || "bogota",
-        firestore,
-        chatId,
-        mcpConnection
-      ),
+    // 6. MODO NATIVO: LLM2 con herramientas MCP + contexto RAG
+    const nativeStartTime = Date.now();
 
-      // 2. Intérprete de intención - RETORNA texto explicativo
-      this.executeIntentionInterpreter(
-        request.prompt,
-        tools, // Agregar herramientas disponibles
-        history,
-        centerId || "bogota",
-        firestore
-      ),
-    ]);
-
-    const interpretersTime = Date.now() - interpretersStartTime;
-    console.log(`⚡ Intérpretes paralelos: ${interpretersTime}ms`);
-
-    // Extraer resultados
-    const toolData =
-      toolResult.status === "fulfilled"
-        ? toolResult.value
-        : { data: "Sin datos", results: [] };
-    const intentionText =
-      intentionResult.status === "fulfilled"
-        ? intentionResult.value
-        : "Respuesta estándar";
-
-    // 6. LLM Final - Combina datos + texto → respuesta final
-    const finalPrompt = `
-      ## HISTORIAL CONVERSACIONAL COMPLETO
-      ${MessageManager.formatHistoryForLLM(history.slice(-15))}
-
-      ## HERRAMIENTAS DISPONIBLES EN EL SISTEMA
-      ${tools.map((t) => `- ${t.name}: ${t.description}`).join("\n")}
-
-      ## DATOS OBTENIDOS DE HERRAMIENTAS EJECUTADAS
-      ${toolData.data}
-
-      ## ANÁLISIS DE INTENCIÓN DEL USUARIO
-      ${intentionText}
-
-      ## Fecha y hora actual
-      ${new Date().toISOString()}
-
-      BASADO EN LA INTENCION DEL USUARIO Y LOS DATOS OBTENIDOS, RESPONDE DE MANERA CONCISA Y DIRECTA.
-      RESPUESTA, HACIENDO UN BREVE ANALISIS DE LA DATA DE LAS HERRAMIENTAS
-
-      OJO: SI NO HAY INTENCION DEBES DECIRLE AL USUARIO QUE TE BRINDE UN POCO MAS DE CLARIDAD, PUDES BASARTE EN EL HISTORIAL PARA CONTRAPREGUNTAR
-      `;
+    // Convertir historial a formato nativo del SDK, incluyendo resultados RAG si existen
+    const contents = this.formatHistoryForNativeSDK(
+      history,
+      request.prompt,
+      ragResults
+    );
 
     const llmProvider = GoogleGenAIManager.getProvider(
       centerId || "default",
       firestore
     );
 
-    // Usar modelo PREMIUM para respuesta final - SOLO TEXTO, NO HERRAMIENTAS
-    const finalLLMStartTime = Date.now();
-    const finalResponse = await llmProvider.generateContent({
-      prompt: finalPrompt,
+    const nativeResponse = await llmProvider.generateContent({
+      contents,
       trackTokens: true,
       chatId: chatId,
+      tools: tools.length > 0 ? [{ functionDeclarations: tools }] : undefined,
+      toolConfig: {
+        functionCallingConfig: {
+          mode: FunctionCallingConfigMode.AUTO,
+        },
+      },
       config: {
         temperature: 0.7,
         maxOutputTokens: 3500,
         topK: 40,
         topP: 0.95,
+        systemInstruction: `
+        Fecha y hora actual: ${new Date().toISOString()}
+        
+        Eres Chelita, una asistente inteligente, amable y eficiente. Servicial y muy dispuesta a ayudar.
+        Sabes explicar muy bien las cosas y siempre buscas la mejor solución.
+        Tu objetivo es ayudar al usuario a resolver su consulta de la mejor manera posible en un lenguajo no muy tecnico.
+        Olvida codigo o nombres de funciones o parametros, usa un lenguaje natural y amigable.
+        las herramientas son tus capacidades y no algo a lo que te debas referir como ajeno.
+
+        Analiza los resultados de las erramientas asegurate de tener todos los parametros necesarios para decidir ejecutar una herramienta.
+        Si no los tienes pregunta o validalos con el usuario.
+        
+        ${
+          ragResults?.executed && ragResults.result
+            ? `
+        # BASE DEL CONOCIMIENTO:
+        ${JSON.stringify(ragResults.result.response, null, 2)}
+        
+        INSTRUCCIÓN IMPORTANTE: Si existe la base del conocimiento arriba y tiene relación con lo que pregunta el usuario según el historial y su último mensaje, entonces responde basado en esa información. Si no tiene relación o no existe, continúa decidiendo lo que consideres apropiado, ya sea ejecutar herramientas o responder de otra manera.
+        `
+            : ""
+        }
+        `,
       },
     });
-    const finalLLMTime = Date.now() - finalLLMStartTime;
-    console.log(`🎯 LLM Final: ${finalLLMTime}ms`);
 
-    const assistantText =
-      finalResponse.text || "No se pudo generar respuesta final.";
+    const nativeTime = Date.now() - nativeStartTime;
+    console.log(`🚀 Modo Nativo (todo integrado): ${nativeTime}ms`);
 
-    // 7. Preparar datos MCP
-    const mcpData: MCPToolResult[] = toolData.results
+    // Procesar function calls si existen
+    let functionCallResults: any[] = [];
+    if (
+      nativeResponse.functionCalls &&
+      nativeResponse.functionCalls.length > 0
+    ) {
+      console.log(
+        `🔧 Function calls ejecutadas: ${nativeResponse.functionCalls
+          .map((f) => f.name)
+          .join(", ")}`
+      );
+      functionCallResults = await this.processFunctionCalls(
+        firestore,
+        chatId,
+        centerId || "bogota",
+        nativeResponse.functionCalls,
+        mcpConnection
+      );
+    }
+
+    const assistantText = nativeResponse.text || "";
+
+    // 7. Preparar datos MCP desde function calls
+    const mcpData: MCPToolResult[] = functionCallResults
       .filter((result: any) => result.name !== "buscar_informacion_operacional") // Excluir RAG
       .map((result: any) => {
         const toolResult: MCPToolResult = {
           toolName: result.name,
-          callId: `call_${Date.now()}_${Math.random()
-            .toString(36)
-            .substr(2, 9)}`,
-          success:
-            result.response?.success !== false && !result.response?.error,
+          callId:
+            result.callId ||
+            `call_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          success: result.success !== false && !result.error,
           data: {
-            params: result.response?.params || {},
+            params: result.response?.params || {}, // Parámetros enviados al MCP
             totalRegistros:
-              result.response?.totalCount ||
-              result.response?.totalRegistros ||
-              0,
+              result.data?.total_registros || result.data?.totalRegistros || 0,
+            ...result.data, // Incluir todos los datos de la respuesta MCP
           },
         };
 
-        // Agregar error si existe en cualquiera de los lugares posibles
-        if (result.response?.error) {
-          toolResult.error = result.response.error;
+        // Agregar error si existe
+        if (result.error) {
+          toolResult.error = result.error;
           toolResult.success = false;
         }
 
         return toolResult;
       });
 
-    // 10. Guardamos la respuesta del asistente con data si existe
+    // 8. Preparar toolData para contexto nativo del historial (incluyendo RAG)
+    const toolDataForHistory = functionCallResults.reduce((acc, result) => {
+      acc[result.name] = {
+        params: result.response?.params || {},
+        ...result.data, // Datos completos de la respuesta MCP
+      };
+      return acc;
+    }, {} as { [toolName: string]: any });
+
+    // Agregar resultados RAG al toolData si se ejecutó
+    if (ragResults.executed && ragResults.result) {
+      toolDataForHistory["buscar_informacion_operacional"] = {
+        params: ragResults.result.params || {},
+        ...ragResults.result.response,
+      };
+    }
+
+    // 9. Guardamos la respuesta del asistente con data y toolData
     const saveStartTime = Date.now();
     const assistantDocId = await MessageManager.saveAssistantMessage(
       firestore,
       chatId,
       assistantText,
-      mcpData.length > 0 ? mcpData : undefined
+      mcpData.length > 0 ? mcpData : undefined,
+      Object.keys(toolDataForHistory).length > 0
+        ? toolDataForHistory
+        : undefined
     );
 
     // 11. Actualizamos la fecha del chat
@@ -542,6 +574,168 @@ export class ConversationOrchestrator {
         : "No se ejecutaron herramientas";
 
     return { data, results };
+  }
+
+  /**
+   * LLM1: Análisis especializado para decidir si ejecutar RAG
+   */
+  private static async executeRAGAnalysis(
+    prompt: string,
+    history: any[],
+    centerId: string,
+    firestore: Firestore,
+    chatId: string
+  ): Promise<{ executed: boolean; data?: string; result?: any }> {
+    // Obtener solo la herramienta RAG
+    const ragTool = this.getInternalTools().find(
+      (tool) => tool.name === "buscar_informacion_operacional"
+    );
+    if (!ragTool) {
+      return { executed: false };
+    }
+
+    // Crear contenido nativo para análisis RAG (sin recursión)
+    const ragContents: any[] = [];
+
+    // Agregar historial básico
+    history.slice(-10).forEach((message) => {
+      if (message.role === "user" || message.role === "assistant") {
+        ragContents.push({
+          role: message.role === "assistant" ? "model" : message.role,
+          parts: [{ text: message.content }],
+        });
+      }
+    });
+
+    const llmProvider = GoogleGenAIManager.getProvider(centerId, firestore);
+
+    const ragResponse = await llmProvider.generateContent({
+      contents: ragContents,
+      trackTokens: true,
+      chatId: chatId + "_rag",
+      tools: [{ functionDeclarations: [ragTool] }],
+      toolConfig: {
+        functionCallingConfig: {
+          mode: FunctionCallingConfigMode.AUTO,
+        },
+      },
+      config: {
+        temperature: 0.2, // Más determinístico para decisiones
+        maxOutputTokens: 1500,
+        topK: 20,
+        topP: 0.8,
+        systemInstruction: `Eres un revisor que analiza si para responder a según el mensaje más reciente del usuario necesitas buscar información técnica específica sobre procesos, procedimientos, documentación o datos que no están en tu conocimiento base.
+
+IMPORTANTE: Solo usa la herramienta de búsqueda si:
+- El usuario pregunta sobre procesos específicos de la empresa
+- Necesitas documentación técnica actual
+- Requieres datos operacionales específicos
+- La pregunta es sobre procedimientos internos
+
+NO uses la herramienta si:
+- Es conversación casual
+- Preguntas generales que puedes responder
+
+Si decides buscar, hazlo. Si no, responde normalmente.`,
+      },
+    });
+
+    // Si ejecutó la herramienta RAG
+    if (ragResponse.functionCalls && ragResponse.functionCalls.length > 0) {
+      const ragFunctionCall = ragResponse.functionCalls[0];
+      const ragResult = await this.executeInternalTool(
+        firestore,
+        chatId,
+        centerId,
+        ragFunctionCall.name,
+        ragFunctionCall.args || ragFunctionCall.parameters || {}
+      );
+
+      return {
+        executed: true,
+        data: ragResult?.response
+          ? JSON.stringify(ragResult.response)
+          : "Sin datos RAG",
+        result: ragResult,
+      };
+    }
+
+    return { executed: false };
+  }
+
+  /**
+   * Convierte historial a formato nativo del SDK con contexto de herramientas y RAG
+   */
+  private static formatHistoryForNativeSDK(
+    history: any[],
+    currentPrompt: string,
+    ragResults?: { executed: boolean; data?: string; result?: any }
+  ): any[] {
+    const contents: any[] = [];
+
+    // Reconstruir el historial manteniendo la secuencia correcta (sin mensajes system)
+    history.slice(-15).forEach((message) => {
+      // Saltar mensajes system - Google GenAI no los acepta
+      if (message.role === "system") return;
+
+      // Agregar mensaje del usuario
+      if (message.role === "user") {
+        contents.push({
+          role: "user",
+          parts: [{ text: message.content }],
+        });
+      }
+
+      // Para mensajes del asistente
+      if (message.role === "assistant") {
+        // Si usó herramientas, reconstruir la secuencia completa
+        if (message.toolData && Object.keys(message.toolData).length > 0) {
+          // 1. Agregar los function calls del modelo
+          const functionCalls = Object.entries(message.toolData).map(
+            ([toolName, data]: [string, any]) => ({
+              functionCall: {
+                name: toolName,
+                args: data.params || data.args || {},
+              },
+            })
+          );
+
+          contents.push({
+            role: "model",
+            parts: functionCalls,
+          });
+
+          // 2. Agregar los resultados de las funciones
+          const functionResponses = Object.entries(message.toolData).map(
+            ([toolName, data]: [string, any]) => ({
+              functionResponse: {
+                name: toolName,
+                response: data.result || data,
+              },
+            })
+          );
+
+          contents.push({
+            role: "function",
+            parts: functionResponses,
+          });
+        }
+
+        // 3. Siempre agregar la respuesta final del modelo
+        contents.push({
+          role: "model",
+          parts: [{ text: message.content }],
+        });
+      }
+    });
+
+    // 3. Prompt actual del usuario (limpio, sin modificaciones)
+    contents.push({
+      role: "user",
+      parts: [{ text: currentPrompt }],
+    });
+
+    return contents;
   }
 
   /**

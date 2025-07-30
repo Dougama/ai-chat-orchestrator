@@ -11,7 +11,7 @@ import { TokenTrackingService } from "../tracking/TokenTrackingService";
 import { Firestore } from "@google-cloud/firestore";
 
 const EMBEDDING_MODEL = "text-embedding-004";
-const GENERATIVE_MODEL_ID = "gemini-2.5-flash";
+const GENERATIVE_MODEL_ID = "gemini-2.0-flash-lite";
 
 // Configuración multi-tenant
 interface ProviderConfig {
@@ -106,12 +106,20 @@ export class GoogleGenAIProvider implements ILLMProvider {
   ): Promise<GenerationResponse> {
     const generateConfig: any = {
       model: GENERATIVE_MODEL_ID,
-      contents: request.prompt,
+      // Usar contents (modo nativo) o prompt (modo legacy)
+      contents: request.contents || request.prompt,
+      // Agregar systemInstruction si está presente
+      ...(request.systemInstruction && {
+        systemInstruction: request.systemInstruction,
+      }),
       config: {
         temperature: request.config?.temperature || 0.3,
         maxOutputTokens: request.config?.maxOutputTokens || 1000,
         topK: request.config?.topK || 40,
         topP: request.config?.topP || 0.95,
+        ...(request.config?.systemInstruction && {
+          systemInstruction: request.config.systemInstruction,
+        }),
         // Agregar herramientas si están presentes
         ...(request.tools &&
           request.tools.length > 0 && { tools: request.tools }),

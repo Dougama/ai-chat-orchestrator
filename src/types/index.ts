@@ -5,6 +5,7 @@ export interface ChatMessage {
   role: "user" | "assistant" | "system";
   content: string;
   timestamp: Date;
+  toolData?: { [toolName: string]: any }; // Para contexto nativo del historial
 }
 
 export interface MCPToolResult {

@@ -67,7 +67,8 @@ export class MessageManager {
     firestore: Firestore, 
     chatId: string, 
     content: string,
-    data?: any[]
+    data?: any[],
+    toolData?: { [toolName: string]: any }
   ): Promise<string> {
     const messagesCollection = firestore
       .collection("chats")
@@ -78,7 +79,8 @@ export class MessageManager {
       role: "assistant",
       content: content,
       timestamp: Timestamp.now(),
-      ...(data && { data })
+      ...(data && { data }),
+      ...(toolData && { toolData })
     };
 
     const assistantDocRef = await messagesCollection.add(assistantMessageData);

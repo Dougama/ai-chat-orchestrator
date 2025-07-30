@@ -25,6 +25,8 @@ export interface MessageData {
   role: "user" | "assistant";
   content: string;
   timestamp: any; // Firestore Timestamp
+  data?: any[]; // Para compatibilidad con MCPToolResult[]
+  toolData?: { [toolName: string]: any }; // Para contexto nativo del historial
 }
 
 export interface ChatWithMessages extends ChatMessage {

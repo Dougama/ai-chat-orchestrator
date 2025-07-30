@@ -3,6 +3,7 @@ export interface GenerationConfig {
   maxOutputTokens?: number;
   topK?: number;
   topP?: number;
+  systemInstruction?: string;
 }
 
 export interface EmbeddingRequest {
@@ -17,7 +18,9 @@ export interface EmbeddingResponse {
 }
 
 export interface GenerationRequest {
-  prompt: string;
+  prompt?: string;
+  contents?: any[]; // Modo nativo con historial estructurado
+  systemInstruction?: string;
   config?: GenerationConfig;
   tools?: any[];
   toolConfig?: any;
