@@ -34,8 +34,8 @@ export const handleChatPrompt = async (
   const firestore = request.centerContext?.firestore || fallbackFirestore;
   const centerId = request.centerContext?.centerId || 'default';
   
-  console.log(`💬 HandleChatPrompt: Usando centro ${centerId}`);
-  console.log(`🔍 DEBUG chatService - request.userId:`, request.userId);
+  // console.log(`💬 HandleChatPrompt: Usando centro ${centerId}`);
+  // console.log(`🔍 DEBUG chatService - request.userId:`, request.userId);
   
   return await ConversationOrchestrator.handleChatPrompt(firestore, request, centerId);
 };

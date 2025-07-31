@@ -28,7 +28,11 @@ export class ConversationOrchestrator {
     centerId?: string
   ): Promise<ChatResponseWithData> {
     const totalStartTime = Date.now();
-    console.log(`📝 Usuario: "${request.prompt}"`);
+    let lastLogTime = totalStartTime;
+    console.log(
+      new Date().toISOString(),
+      `📝 Usuario: "${request.prompt}" | +0.00s`
+    );
 
     let chatId = request.chatId;
 
@@ -42,58 +46,63 @@ export class ConversationOrchestrator {
       );
     }
 
-    // 2. Guardamos el nuevo mensaje del usuario
-    await MessageManager.saveUserMessage(firestore, chatId, request.prompt);
+    // 2. Guardamos mensaje del usuario y recuperamos historial en paralelo
+    const [saveUserMessageResult, historyResult] = await Promise.allSettled([
+      MessageManager.saveUserMessage(firestore, chatId, request.prompt),
+      MessageManager.getRecentHistory(firestore, chatId, 20)
+    ]);
 
-    // 3. Recuperamos el historial reciente para el contexto (aumentado para mejor continuidad)
-    const history = await MessageManager.getRecentHistory(
-      firestore,
-      chatId,
-      20
-    );
+    // Extraer historial del resultado
+    const history = historyResult.status === 'fulfilled' 
+      ? historyResult.value 
+      : [];
+
+    // Log errores si los hay
+    if (saveUserMessageResult.status === 'rejected') {
+      console.error(new Date().toISOString(), '❌ Error guardando mensaje usuario:', saveUserMessageResult.reason);
+    }
+    if (historyResult.status === 'rejected') {
+      console.error(new Date().toISOString(), '❌ Error obteniendo historial:', historyResult.reason);
+    }
     const setupTime = Date.now() - setupStartTime;
-    console.log(`⚙️ Setup (Chat/Message/History): ${setupTime}ms`);
+    const setupDelta = ((Date.now() - lastLogTime) / 1000).toFixed(2);
+    lastLogTime = Date.now();
+    console.log(
+      new Date().toISOString(),
+      `⚙️ Setup (Chat/Message/History): ${setupTime}ms | +${setupDelta}s`
+    );
 
-    // 4. Preparamos TODAS las herramientas (internas + MCP) antes del análisis
+    // 4. Preparamos TODAS las herramientas (internas + MCP) en paralelo
     const toolsStartTime = Date.now();
     let tools: any[] = [];
     let mcpConnection: MCPConnection | null = null;
 
-    // Agregar herramientas internas (excluyendo RAG)
-    const internalTools = this.getInternalTools().filter(
-      (tool) => tool.name !== "buscar_informacion_operacional"
-    );
-    tools.push(...internalTools);
+    // Paralelizar preparación de herramientas internas y MCP
+    const [internalToolsResult, mcpResult] = await Promise.allSettled([
+      // Herramientas internas (síncronas)
+      Promise.resolve(this.getInternalTools().filter(
+        (tool) => tool.name !== "buscar_informacion_operacional"
+      )),
+      // Herramientas MCP (asíncronas)
+      centerId ? this.prepareMCPTools(centerId) : Promise.resolve({ tools: [], connection: null })
+    ]);
 
-    // Agregar herramientas MCP
-    if (centerId) {
-      try {
-        // Intentar conectar a MCP del centro
-        mcpConnection = await this.mcpConnectionManager.connectToCenter(
-          centerId
-        );
+    // Agregar herramientas internas
+    if (internalToolsResult.status === 'fulfilled') {
+      tools.push(...internalToolsResult.value);
+    }
 
-        if (mcpConnection.isConnected) {
-          // Obtener herramientas disponibles del centro
-          const mcpTools = await this.mcpConnectionManager.getAvailableTools(
-            centerId
-          );
-          const validTools = this.mcpAdapter.filterValidMCPTools(mcpTools);
-
-          if (validTools.length > 0) {
-            // Convertir herramientas MCP a formato Google GenAI
-            const mcpGenAITools =
-              this.mcpAdapter.convertMCPToolsToGenAI(validTools);
-            tools.push(...mcpGenAITools);
-          }
-        }
-      } catch (error) {
-        // Continuar sin herramientas MCP
-      }
+    // Agregar herramientas MCP si están disponibles
+    if (mcpResult.status === 'fulfilled' && mcpResult.value.tools.length > 0) {
+      tools.push(...mcpResult.value.tools);
+      mcpConnection = mcpResult.value.connection;
     }
     const toolsTime = Date.now() - toolsStartTime;
+    const toolsDelta = ((Date.now() - lastLogTime) / 1000).toFixed(2);
+    lastLogTime = Date.now();
     console.log(
-      `🔧 Preparación herramientas (${tools.length} total): ${toolsTime}ms`
+      new Date().toISOString(),
+      `🔧 Preparación herramientas (${tools.length} total): ${toolsTime}ms | +${toolsDelta}s`
     );
 
     // 5. LLM1: Análisis RAG especializado
@@ -106,10 +115,13 @@ export class ConversationOrchestrator {
       chatId
     );
     const ragTime = Date.now() - ragStartTime;
+    const ragDelta = ((Date.now() - lastLogTime) / 1000).toFixed(2);
+    lastLogTime = Date.now();
     console.log(
+      new Date().toISOString(),
       `🔍 Análisis RAG: ${ragTime}ms${
         ragResults.executed ? " (ejecutado)" : " (no necesario)"
-      }`
+      } | +${ragDelta}s`
     );
 
     // 6. MODO NATIVO: LLM2 con herramientas MCP + contexto RAG
@@ -173,7 +185,12 @@ export class ConversationOrchestrator {
     });
 
     const nativeTime = Date.now() - nativeStartTime;
-    console.log(`🚀 Modo Nativo (todo integrado): ${nativeTime}ms`);
+    const nativeDelta = ((Date.now() - lastLogTime) / 1000).toFixed(2);
+    lastLogTime = Date.now();
+    console.log(
+      new Date().toISOString(),
+      `🚀 Modo Nativo (todo integrado): ${nativeTime}ms | +${nativeDelta}s`
+    );
 
     // Procesar function calls si existen
     let functionCallResults: any[] = [];
@@ -181,10 +198,13 @@ export class ConversationOrchestrator {
       nativeResponse.functionCalls &&
       nativeResponse.functionCalls.length > 0
     ) {
+      const funcCallsDelta = ((Date.now() - lastLogTime) / 1000).toFixed(2);
+      lastLogTime = Date.now();
       console.log(
+        new Date().toISOString(),
         `🔧 Function calls ejecutadas: ${nativeResponse.functionCalls
           .map((f) => f.name)
-          .join(", ")}`
+          .join(", ")} | +${funcCallsDelta}s`
       );
       functionCallResults = await this.processFunctionCalls(
         firestore,
@@ -195,9 +215,16 @@ export class ConversationOrchestrator {
       );
     }
 
-    const assistantText = nativeResponse.text || "";
+    const assistantText =
+      nativeResponse.text || "Echale un vistazo y dime si necesitas algo más.";
 
     // 7. Preparar datos MCP desde function calls
+    const mcpPrepDelta = ((Date.now() - lastLogTime) / 1000).toFixed(2);
+    lastLogTime = Date.now();
+    console.log(
+      new Date().toISOString(),
+      `🔧 Procesando resultados de herramientas... | +${mcpPrepDelta}s`
+    );
     const mcpData: MCPToolResult[] = functionCallResults
       .filter((result: any) => result.name !== "buscar_informacion_operacional") // Excluir RAG
       .map((result: any) => {
@@ -227,6 +254,12 @@ export class ConversationOrchestrator {
       });
 
     // 8. Preparar toolData para contexto nativo del historial (excluyendo RAG)
+    const toolDataDelta = ((Date.now() - lastLogTime) / 1000).toFixed(2);
+    lastLogTime = Date.now();
+    console.log(
+      new Date().toISOString(),
+      `🔧 Procesando toolData para historial... | +${toolDataDelta}s`
+    );
     const toolDataForHistory = functionCallResults
       .filter((result: any) => result.name !== "buscar_informacion_operacional") // Excluir RAG
       .reduce((acc, result) => {
@@ -234,30 +267,56 @@ export class ConversationOrchestrator {
         return acc;
       }, {} as { [toolName: string]: any });
 
-
-    // 9. Guardamos la respuesta del asistente con data y toolData
+    // 9. Guardamos la respuesta del asistente y actualizamos timestamp en paralelo
     const saveStartTime = Date.now();
-    const assistantDocId = await MessageManager.saveAssistantMessage(
-      firestore,
-      chatId,
-      assistantText,
-      mcpData.length > 0 ? mcpData : undefined,
-      Object.keys(toolDataForHistory).length > 0
-        ? toolDataForHistory
-        : undefined
+    const [saveAssistantMessageResult, updateTimestampResult] = await Promise.allSettled(
+      [
+        MessageManager.saveAssistantMessage(
+          firestore,
+          chatId,
+          assistantText,
+          mcpData.length > 0 ? mcpData : undefined,
+          Object.keys(toolDataForHistory).length > 0
+            ? toolDataForHistory
+            : undefined
+        ),
+        ChatManager.updateChatTimestamp(firestore, chatId),
+      ]
     );
 
-    // 11. Actualizamos la fecha del chat
-    await ChatManager.updateChatTimestamp(firestore, chatId);
+    // Extraer assistantDocId del resultado exitoso
+    const assistantDocId =
+      saveAssistantMessageResult.status === "fulfilled"
+        ? saveAssistantMessageResult.value
+        : `fallback_${Date.now()}`;
+
+    // Log de errores si los hay
+    if (saveAssistantMessageResult.status === "rejected") {
+      console.error("❌ Error guardando mensaje:", saveAssistantMessageResult.reason);
+    }
+    if (updateTimestampResult.status === "rejected") {
+      console.error(
+        "❌ Error actualizando timestamp:",
+        updateTimestampResult.reason
+      );
+    }
+
     const saveTime = Date.now() - saveStartTime;
-    console.log(`💾 Guardar respuesta: ${saveTime}ms`);
+    const saveDelta = ((Date.now() - lastLogTime) / 1000).toFixed(2);
+    lastLogTime = Date.now();
+    console.log(
+      new Date().toISOString(),
+      `💾 Guardar respuesta (paralelo): ${saveTime}ms | +${saveDelta}s`
+    );
 
     // 12. Tiempo total de la función
     const totalTime = Date.now() - totalStartTime;
+    const totalDelta = ((Date.now() - lastLogTime) / 1000).toFixed(2);
     console.log(
+      new Date().toISOString(),
       `⏱️ TIEMPO TOTAL handleChatPrompt: ${totalTime}ms (${(
         totalTime / 1000
-      ).toFixed(2)}s)`
+      ).toFixed(2)}s) | +${totalDelta}s`
     );
 
     // 13. Devolvemos la respuesta con campo data[] si hay resultados MCP
@@ -467,11 +526,12 @@ export class ConversationOrchestrator {
     const genAIResult = this.mcpAdapter.convertMCPResultsToGenAI([toolResult]);
 
     if (genAIResult.length > 0) {
-      console.log(`ConversationOrchestrator: MCP tool result:`, {
-        toolName: functionCall.name,
-        success: toolResult.success,
-        hasData: !!toolResult.data,
-      });
+      console.log(
+        new Date().toISOString(),
+        `ConversationOrchestrator: MCP tool result: ${
+          functionCall.name
+        } | success: ${toolResult.success} | hasData: ${!!toolResult.data}`
+      );
 
       return {
         ...genAIResult[0],
@@ -550,6 +610,7 @@ export class ConversationOrchestrator {
     let results: any[] = [];
     if (response.functionCalls && response.functionCalls.length > 0) {
       console.log(
+        new Date().toISOString(),
         `🔧 ToolInterpreter FUNCTIONS: ${response.functionCalls
           .map((f) => f.name)
           .join(", ")} herramientas ejecutadas`
@@ -688,31 +749,35 @@ Si decides buscar, hazlo. Si no, responde normalmente.`,
       if (message.role === "assistant") {
         // Si usó herramientas, reconstruir la secuencia completa
         if (message.toolData && Object.keys(message.toolData).length > 0) {
-          // 1. Agregar los function calls del modelo
-          const functionCalls = Object.entries(message.toolData).map(
-            ([toolName, data]: [string, any]) => ({
+          // Optimización: una sola iteración sobre toolData
+          const functionCalls: any[] = [];
+          const functionResponses: any[] = [];
+          
+          // Una sola iteración para construir ambos arrays
+          for (const [toolName, data] of Object.entries(message.toolData)) {
+            const toolData = data as any; // Type assertion para toolData
+            functionCalls.push({
               functionCall: {
                 name: toolName,
-                args: data.params || data.args || {},
+                args: toolData.params || toolData.args || {},
               },
-            })
-          );
+            });
+            
+            functionResponses.push({
+              functionResponse: {
+                name: toolName,
+                response: toolData.result || toolData,
+              },
+            });
+          }
 
+          // 1. Agregar los function calls del modelo
           contents.push({
             role: "model",
             parts: functionCalls,
           });
 
           // 2. Agregar los resultados de las funciones
-          const functionResponses = Object.entries(message.toolData).map(
-            ([toolName, data]: [string, any]) => ({
-              functionResponse: {
-                name: toolName,
-                response: data.result || data,
-              },
-            })
-          );
-
           contents.push({
             role: "function",
             parts: functionResponses,
@@ -793,5 +858,35 @@ Si decides buscar, hazlo. Si no, responde normalmente.`,
     });
     // console.log("RESPONSE INTENTION INTERPRETER:", response);
     return response.text;
+  }
+
+  /**
+   * Prepara herramientas MCP de forma asíncrona
+   */
+  private static async prepareMCPTools(centerId: string): Promise<{ 
+    tools: any[], 
+    connection: MCPConnection | null 
+  }> {
+    try {
+      // Intentar conectar a MCP del centro
+      const mcpConnection = await this.mcpConnectionManager.connectToCenter(centerId);
+
+      if (mcpConnection.isConnected) {
+        // Obtener herramientas disponibles del centro
+        const mcpTools = await this.mcpConnectionManager.getAvailableTools(centerId);
+        const validTools = this.mcpAdapter.filterValidMCPTools(mcpTools);
+
+        if (validTools.length > 0) {
+          // Convertir herramientas MCP a formato Google GenAI
+          const mcpGenAITools = this.mcpAdapter.convertMCPToolsToGenAI(validTools);
+          return { tools: mcpGenAITools, connection: mcpConnection };
+        }
+      }
+
+      return { tools: [], connection: mcpConnection };
+    } catch (error) {
+      // Continuar sin herramientas MCP
+      return { tools: [], connection: null };
+    }
   }
 }

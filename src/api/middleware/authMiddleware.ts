@@ -85,7 +85,7 @@ export async function authMiddleware(
   try {
     // BYPASS PARA DESARROLLO LOCAL
     if (process.env.NODE_ENV === 'development' && req.headers.host?.includes('localhost')) {
-      console.log('🚀 DESARROLLO LOCAL: Bypassing autenticación');
+      // console.log('🚀 DESARROLLO LOCAL: Bypassing autenticación');
       
       // Extraer centerId del header o query param, fallback a 'cucuta'
       const centerId = req.headers["x-center-id"] as string || 
@@ -100,7 +100,7 @@ export async function authMiddleware(
         centerId: centerId
       };
       
-      console.log(`🔧 DEV: Usuario mock ${req.user.uid} del centro ${centerId}`);
+      // console.log(`🔧 DEV: Usuario mock ${req.user.uid} del centro ${centerId}`);
       return next();
     }
 

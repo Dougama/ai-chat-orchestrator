@@ -49,10 +49,10 @@ export async function searchSimilarEmbeddingsVector(
   chatId?: string
 ): Promise<SearchResult[]> {
   try {
-    console.log(`🔍 Generando embedding de consulta para centro ${centerId}...`);
+    console.log(new Date().toISOString(), `🔍 Generando embedding de consulta para centro ${centerId}...`);
     const queryEmbedding = await generateQueryEmbedding(queryText, centerId, firestore, chatId);
 
-    console.log("📥 Realizando búsqueda vectorial en Firestore...");
+    console.log(new Date().toISOString(), "📥 Realizando búsqueda vectorial en Firestore...");
     let collection = firestore.collection(collectionName);
 
     // Aplicar filtro si se especifica
@@ -86,10 +86,10 @@ export async function searchSimilarEmbeddingsVector(
       });
     });
 
-    console.log(`✅ Encontrados ${results.length} resultados similares`);
+    console.log(new Date().toISOString(), `✅ Encontrados ${results.length} resultados similares`);
     return results;
   } catch (error: any) {
-    console.error("❌ Error en búsqueda vectorial:", error);
+    console.error(new Date().toISOString(), "❌ Error en búsqueda vectorial:", error);
     throw new Error(`Error en búsqueda vectorial: ${error.message}`);
   }
 }

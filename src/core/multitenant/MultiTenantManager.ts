@@ -16,12 +16,12 @@ export class MultiTenantManager implements IMultiTenantManager {
   async initializeCenters(): Promise<void> {
     const centers = getActiveCenters();
     
-    console.log(`Inicializando ${centers.length} centros...`);
+    // console.log(`Inicializando ${centers.length} centros...`);
     
     const initPromises = centers.map(async (center) => {
       try {
         await this.centerRouter.routeToCenter(center.id);
-        console.log(`✅ Centro ${center.name} inicializado`);
+        // console.log(`✅ Centro ${center.name} inicializado`);
       } catch (error) {
         console.error(`❌ Error inicializando centro ${center.name}:`, error);
         // No fallar si un centro no está disponible
@@ -30,7 +30,7 @@ export class MultiTenantManager implements IMultiTenantManager {
     
     await Promise.allSettled(initPromises);
     this.initialized = true;
-    console.log("🎉 Inicialización multi-tenant completada");
+    // console.log("🎉 Inicialización multi-tenant completada");
   }
 
   /**
@@ -103,6 +103,6 @@ export class MultiTenantManager implements IMultiTenantManager {
     // - Verificar maxTokensPerMonth
     // - Throw error si se exceden límites
     
-    console.log(`✅ Límites de billing verificados para ${center.name}`);
+    // console.log(`✅ Límites de billing verificados para ${center.name}`);
   }
 }

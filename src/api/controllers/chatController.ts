@@ -19,10 +19,10 @@ const multiTenantManager = new MultiTenantManager();
 let isInitialized = false;
 const initializeMultiTenant = async () => {
   if (!isInitialized) {
-    console.log("🚀 Inicializando sistema multi-tenant...");
+    // console.log("🚀 Inicializando sistema multi-tenant...");
     await multiTenantManager.initializeCenters();
     isInitialized = true;
-    console.log("✅ Sistema multi-tenant inicializado");
+    // console.log("✅ Sistema multi-tenant inicializado");
   }
 };
 
@@ -34,14 +34,19 @@ const extractUserContext = (req: AuthenticatedRequest): UserContext => {
   if (req.user) {
     return {
       userId: req.user.uid,
-      centerId: req.headers['x-center-id'] as string || req.query.center as string || req.user.centerId,
+      centerId:
+        (req.headers["x-center-id"] as string) ||
+        (req.query.center as string) ||
+        req.user.centerId,
     };
   }
-  
+
   // Fallback para requests no autenticados (solo health check)
   return {
-    userId: req.params.userId || req.body.userId || req.query.userId || 'anonymous',
-    centerId: req.headers['x-center-id'] as string || req.query.center as string,
+    userId:
+      req.params.userId || req.body.userId || req.query.userId || "anonymous",
+    centerId:
+      (req.headers["x-center-id"] as string) || (req.query.center as string),
   };
 };
 
@@ -49,7 +54,10 @@ const extractUserContext = (req: AuthenticatedRequest): UserContext => {
  * Valida que el usuario del path coincida con el usuario autenticado
  * Ya validado en el middleware, pero se mantiene por seguridad adicional
  */
-const validateUserOwnership = (pathUserId: string, contextUserId: string): boolean => {
+const validateUserOwnership = (
+  pathUserId: string,
+  contextUserId: string
+): boolean => {
   if (pathUserId !== contextUserId) {
     return false;
   }
@@ -60,32 +68,59 @@ export const postChatMessage = async (
   req: AuthenticatedRequest,
   res: Response
 ): Promise<void> => {
+  const controllerStartTime = Date.now();
+  let lastLogTime = controllerStartTime;
+  console.log(new Date().toISOString(), `🎯 [CONTROLLER] Nuevo mensaje recibido | +0.00s`);
+  
   try {
     // Inicializar multi-tenant si no está listo
+    const initStartTime = Date.now();
     await initializeMultiTenant();
-
+    const initDelta = ((Date.now() - lastLogTime) / 1000).toFixed(2);
+    lastLogTime = Date.now();
+    console.log(new Date().toISOString(), `🏗️ [CONTROLLER] Multi-tenant inicializado | +${initDelta}s`);
+    
     const { prompt, history = [] } = req.body;
     if (!prompt) {
       res.status(400).json({ error: 'El campo "prompt" es requerido.' });
       return;
     }
 
+    // Log del prompt con color
+    const promptDelta = ((Date.now() - lastLogTime) / 1000).toFixed(2);
+    lastLogTime = Date.now();
+    console.log(new Date().toISOString(), `\x1b[36m💬 [CONTROLLER] Usuario: "${prompt}"\x1b[0m | +${promptDelta}s`);
+
     // Extraer contexto del usuario
     const userContext = extractUserContext(req);
     const pathUserId = req.params.userId;
-    
+
     // Validación de ownership (ya validada en middleware, pero doble check)
     if (!validateUserOwnership(pathUserId, userContext.userId)) {
-      res.status(403).json({ error: 'No tienes permisos para acceder a este recurso.' });
+      res
+        .status(403)
+        .json({ error: "No tienes permisos para acceder a este recurso." });
       return;
     }
     
-    console.log(`🔍 DEBUG chatController - pathUserId: ${pathUserId}, contextUserId: ${userContext.userId}`);
-    
     // Enriquecer request con centerContext
-    const enrichedRequest = await multiTenantManager.handleRequest(req, userContext);
+    const enrichStartTime = Date.now();
+    const enrichedRequest = await multiTenantManager.handleRequest(
+      req,
+      userContext
+    );
+    const enrichDelta = ((Date.now() - lastLogTime) / 1000).toFixed(2);
+    lastLogTime = Date.now();
+    console.log(new Date().toISOString(), `🎯 [CONTROLLER] Request enriquecido con centerContext | +${enrichDelta}s`);
     
     const chatId = req.params.chatId;
+    
+    // Llamada principal al orquestrador
+    const orchestratorStartTime = Date.now();
+    const orchestratorDelta = ((Date.now() - lastLogTime) / 1000).toFixed(2);
+    lastLogTime = Date.now();
+    console.log(new Date().toISOString(), `🚀 [CONTROLLER] Iniciando orquestador de conversación | +${orchestratorDelta}s`);
+    
     const assistantResponse = await handleChatPrompt({
       prompt,
       chatId,
@@ -94,9 +129,20 @@ export const postChatMessage = async (
       centerContext: enrichedRequest.centerContext, // ✅ Agregar centerContext
     });
     
+    const responseReadyDelta = ((Date.now() - lastLogTime) / 1000).toFixed(2);
+    lastLogTime = Date.now();
+    console.log(new Date().toISOString(), `✅ [CONTROLLER] Respuesta del orquestador lista | +${responseReadyDelta}s`);
+
     res.status(200).json(assistantResponse);
+    
+    // Tiempo total del controlador
+    const totalControllerTime = Date.now() - controllerStartTime;
+    const sendDelta = ((Date.now() - lastLogTime) / 1000).toFixed(2);
+    console.log(new Date().toISOString(), `🎉 [CONTROLLER] Respuesta enviada al cliente | +${sendDelta}s`);
+    console.log(new Date().toISOString(), `⏱️ [CONTROLLER] TIEMPO TOTAL: ${totalControllerTime}ms (${(totalControllerTime / 1000).toFixed(2)}s)`);
   } catch (error) {
-    console.error("Error en el controlador de chat:", error);
+    const errorTime = Date.now() - controllerStartTime;
+    console.error(new Date().toISOString(), `❌ [CONTROLLER] Error tras ${errorTime}ms:`, error);
     res
       .status(500)
       .json({ error: "Ha ocurrido un error interno en el servidor." });
@@ -119,17 +165,24 @@ export const getUserChats = async (
 
     // Extraer contexto del usuario
     const userContext = extractUserContext(req);
-    
+
     // TODO: Validación de ownership comentada temporalmente
     // if (!validateUserOwnership(pathUserId, userContext.userId)) {
     //   res.status(403).json({ error: 'No tienes permisos para acceder a este recurso.' });
     //   return;
     // }
-    
-    // Enriquecer request con centerContext
-    const enrichedRequest = await multiTenantManager.handleRequest(req, userContext);
 
-    const chats = await listUserChats(pathUserId, lastSeen as string | undefined, enrichedRequest.centerContext);
+    // Enriquecer request con centerContext
+    const enrichedRequest = await multiTenantManager.handleRequest(
+      req,
+      userContext
+    );
+
+    const chats = await listUserChats(
+      pathUserId,
+      lastSeen as string | undefined,
+      enrichedRequest.centerContext
+    );
     res.status(200).json(chats);
   } catch (error) {
     console.error("Error al obtener los chats del usuario:", error);
@@ -147,20 +200,26 @@ export const getChatMessages = async (
     await initializeMultiTenant();
 
     const { chatId, userId: pathUserId } = req.params;
-    
+
     // Extraer contexto del usuario
     const userContext = extractUserContext(req);
-    
+
     // TODO: Validación de ownership comentada temporalmente
     // if (!validateUserOwnership(pathUserId, userContext.userId)) {
     //   res.status(403).json({ error: 'No tienes permisos para acceder a este recurso.' });
     //   return;
     // }
-    
-    // Enriquecer request con centerContext
-    const enrichedRequest = await multiTenantManager.handleRequest(req, userContext);
 
-    const messages = await getMessagesForChat(chatId, enrichedRequest.centerContext);
+    // Enriquecer request con centerContext
+    const enrichedRequest = await multiTenantManager.handleRequest(
+      req,
+      userContext
+    );
+
+    const messages = await getMessagesForChat(
+      chatId,
+      enrichedRequest.centerContext
+    );
     res.status(200).json(messages);
   } catch (error) {
     console.error("Error al obtener los mensajes del chat:", error);
@@ -177,18 +236,21 @@ export const deleteChat = async (
     await initializeMultiTenant();
 
     const { chatId, userId: pathUserId } = req.params;
-    
+
     // Extraer contexto del usuario
     const userContext = extractUserContext(req);
-    
+
     // TODO: Validación de ownership comentada temporalmente
     // if (!validateUserOwnership(pathUserId, userContext.userId)) {
     //   res.status(403).json({ error: 'No tienes permisos para acceder a este recurso.' });
     //   return;
     // }
-    
+
     // Enriquecer request con centerContext
-    const enrichedRequest = await multiTenantManager.handleRequest(req, userContext);
+    const enrichedRequest = await multiTenantManager.handleRequest(
+      req,
+      userContext
+    );
 
     await deleteUserChat(chatId, pathUserId, enrichedRequest.centerContext);
     res.status(204).send();
@@ -211,10 +273,10 @@ export const getMultiTenantHealth = async (
 
     // Verificar estado de todos los centros
     const centerHealth = await multiTenantManager.healthCheck();
-    
+
     // Verificar estado de GoogleGenAI por centro
     const genAIHealth = await GoogleGenAIManager.healthCheck();
-    
+
     // Obtener configuración de GoogleGenAI
     const genAIConfig = GoogleGenAIManager.getConfiguration();
 
@@ -224,15 +286,19 @@ export const getMultiTenantHealth = async (
       centers: centerHealth,
       googleGenAI: {
         health: genAIHealth,
-        configuration: genAIConfig
+        configuration: genAIConfig,
       },
       availableCenters: multiTenantManager.getAvailableCenters(),
     };
 
     // Determinar status general
-    const hasUnhealthyCenter = Object.values(centerHealth).some(healthy => !healthy);
-    const hasUnhealthyGenAI = Object.values(genAIHealth).some(healthy => !healthy);
-    
+    const hasUnhealthyCenter = Object.values(centerHealth).some(
+      (healthy) => !healthy
+    );
+    const hasUnhealthyGenAI = Object.values(genAIHealth).some(
+      (healthy) => !healthy
+    );
+
     if (hasUnhealthyCenter || hasUnhealthyGenAI) {
       overallHealth.status = "degraded";
     }
@@ -240,10 +306,10 @@ export const getMultiTenantHealth = async (
     res.status(200).json(overallHealth);
   } catch (error) {
     console.error("Error en health check multi-tenant:", error);
-    res.status(503).json({ 
+    res.status(503).json({
       status: "unhealthy",
       timestamp: new Date().toISOString(),
-      error: "Multi-tenant system not available" 
+      error: "Multi-tenant system not available",
     });
   }
 };

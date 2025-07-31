@@ -51,7 +51,7 @@ export class MCPToolCache implements IMCPToolCache {
       return null;
     }
     
-    console.log(`MCPToolCache: Cache hit para ${centerId}, ${entry.tools.length} herramientas`);
+    // console.log(`MCPToolCache: Cache hit para ${centerId}, ${entry.tools.length} herramientas`);
     return [...entry.tools]; // Copia defensiva
   }
 

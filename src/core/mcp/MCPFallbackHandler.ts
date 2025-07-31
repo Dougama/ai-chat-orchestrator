@@ -27,7 +27,7 @@ export class MCPFallbackHandler {
    * Ejecuta una herramienta en modo fallback
    */
   async executeFallbackTool(toolCall: MCPToolCall): Promise<MCPToolResult> {
-    console.log(`MCPFallbackHandler: Ejecutando fallback para ${toolCall.toolName}`);
+    console.log(new Date().toISOString(), `MCPFallbackHandler: Ejecutando fallback para ${toolCall.toolName}`);
     
     if (!this.hasFallback(toolCall.toolName)) {
       return {
@@ -41,10 +41,10 @@ export class MCPFallbackHandler {
     try {
       const result = await this.executeSpecificFallback(toolCall);
       
-      console.log(`MCPFallbackHandler: Fallback exitoso para ${toolCall.toolName}`);
+      console.log(new Date().toISOString(), `MCPFallbackHandler: Fallback exitoso para ${toolCall.toolName}`);
       return result;
     } catch (error) {
-      console.error(`MCPFallbackHandler: Error en fallback para ${toolCall.toolName}:`, error);
+      console.error(new Date().toISOString(), `MCPFallbackHandler: Error en fallback para ${toolCall.toolName}:`, error);
       
       return {
         toolName: toolCall.toolName,

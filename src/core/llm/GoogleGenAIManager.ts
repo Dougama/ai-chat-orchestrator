@@ -32,7 +32,7 @@ export class GoogleGenAIManager {
       firestore: firestore
     });
 
-    console.log(`GoogleGenAIManager: ✅ Provider creado para ${centerId} (proyecto: ${centerConfig.gcpProject.projectId})`);
+    // console.log(`GoogleGenAIManager: ✅ Provider creado para ${centerId} (proyecto: ${centerConfig.gcpProject.projectId})`);
     return provider;
   }
 
