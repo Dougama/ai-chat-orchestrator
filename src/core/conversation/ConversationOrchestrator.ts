@@ -666,6 +666,12 @@ export class ConversationOrchestrator {
       }
     });
 
+    // IMPORTANTE: Siempre agregar el prompt actual al final
+    ragContents.push({
+      role: "user",
+      parts: [{ text: prompt }],
+    });
+
     const llmProvider = GoogleGenAIManager.getProvider(centerId, firestore);
 
     const ragResponse = await llmProvider.generateContent({
