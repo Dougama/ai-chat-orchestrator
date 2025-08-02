@@ -49,20 +49,27 @@ export class ConversationOrchestrator {
     // 2. Guardamos mensaje del usuario y recuperamos historial en paralelo
     const [saveUserMessageResult, historyResult] = await Promise.allSettled([
       MessageManager.saveUserMessage(firestore, chatId, request.prompt),
-      MessageManager.getRecentHistory(firestore, chatId, 20)
+      MessageManager.getRecentHistory(firestore, chatId, 20),
     ]);
 
     // Extraer historial del resultado
-    const history = historyResult.status === 'fulfilled' 
-      ? historyResult.value 
-      : [];
+    const history =
+      historyResult.status === "fulfilled" ? historyResult.value : [];
 
     // Log errores si los hay
-    if (saveUserMessageResult.status === 'rejected') {
-      console.error(new Date().toISOString(), '❌ Error guardando mensaje usuario:', saveUserMessageResult.reason);
+    if (saveUserMessageResult.status === "rejected") {
+      console.error(
+        new Date().toISOString(),
+        "❌ Error guardando mensaje usuario:",
+        saveUserMessageResult.reason
+      );
     }
-    if (historyResult.status === 'rejected') {
-      console.error(new Date().toISOString(), '❌ Error obteniendo historial:', historyResult.reason);
+    if (historyResult.status === "rejected") {
+      console.error(
+        new Date().toISOString(),
+        "❌ Error obteniendo historial:",
+        historyResult.reason
+      );
     }
     const setupTime = Date.now() - setupStartTime;
     const setupDelta = ((Date.now() - lastLogTime) / 1000).toFixed(2);
@@ -80,20 +87,24 @@ export class ConversationOrchestrator {
     // Paralelizar preparación de herramientas internas y MCP
     const [internalToolsResult, mcpResult] = await Promise.allSettled([
       // Herramientas internas (síncronas)
-      Promise.resolve(this.getInternalTools().filter(
-        (tool) => tool.name !== "buscar_informacion_operacional"
-      )),
+      Promise.resolve(
+        this.getInternalTools().filter(
+          (tool) => tool.name !== "buscar_informacion_operacional"
+        )
+      ),
       // Herramientas MCP (asíncronas)
-      centerId ? this.prepareMCPTools(centerId) : Promise.resolve({ tools: [], connection: null })
+      centerId
+        ? this.prepareMCPTools(centerId)
+        : Promise.resolve({ tools: [], connection: null }),
     ]);
 
     // Agregar herramientas internas
-    if (internalToolsResult.status === 'fulfilled') {
+    if (internalToolsResult.status === "fulfilled") {
       tools.push(...internalToolsResult.value);
     }
 
     // Agregar herramientas MCP si están disponibles
-    if (mcpResult.status === 'fulfilled' && mcpResult.value.tools.length > 0) {
+    if (mcpResult.status === "fulfilled" && mcpResult.value.tools.length > 0) {
       tools.push(...mcpResult.value.tools);
       mcpConnection = mcpResult.value.connection;
     }
@@ -150,7 +161,7 @@ export class ConversationOrchestrator {
         },
       },
       config: {
-        temperature: 0.7,
+        temperature: 0.75,
         maxOutputTokens: 3500,
         topK: 40,
         topP: 0.95,
@@ -269,8 +280,8 @@ export class ConversationOrchestrator {
 
     // 9. Guardamos la respuesta del asistente y actualizamos timestamp en paralelo
     const saveStartTime = Date.now();
-    const [saveAssistantMessageResult, updateTimestampResult] = await Promise.allSettled(
-      [
+    const [saveAssistantMessageResult, updateTimestampResult] =
+      await Promise.allSettled([
         MessageManager.saveAssistantMessage(
           firestore,
           chatId,
@@ -281,8 +292,7 @@ export class ConversationOrchestrator {
             : undefined
         ),
         ChatManager.updateChatTimestamp(firestore, chatId),
-      ]
-    );
+      ]);
 
     // Extraer assistantDocId del resultado exitoso
     const assistantDocId =
@@ -292,7 +302,10 @@ export class ConversationOrchestrator {
 
     // Log de errores si los hay
     if (saveAssistantMessageResult.status === "rejected") {
-      console.error("❌ Error guardando mensaje:", saveAssistantMessageResult.reason);
+      console.error(
+        "❌ Error guardando mensaje:",
+        saveAssistantMessageResult.reason
+      );
     }
     if (updateTimestampResult.status === "rejected") {
       console.error(
@@ -546,96 +559,6 @@ export class ConversationOrchestrator {
   }
 
   /**
-   * KISS: Intérprete de herramientas simple - EJECUTA herramientas y retorna datos
-   */
-  private static async executeToolInterpreter(
-    prompt: string,
-    tools: any[],
-    history: any[],
-    centerId: string,
-    firestore: Firestore,
-    chatId: string,
-    mcpConnection: any
-  ): Promise<{ data: string; results: any[] }> {
-    const toolInterpreterStartTime = Date.now();
-    const toolPrompt = `
-    Eres un interprete en una conversacion (chat) entre un asistente y un usuario
-    Tu trabajo es analizar el mensaje del usuario para entender su relación con el historial
-    y las herramientas disponibles segun su descripción para determinar la intención mas probable y definir con criterio
-    lo que el usuario quiere lograr. y si una herramienta es necesaria o no.
-    
-
-    Ejecuta las herramientas necesarias considerando el contexto temporal y conversacional.
-    por favor analiza profundamente Si algun parametro requerido para una herramienta falta, no debes ejecutarla.
-    La unica condicion para ejecutar una herramienta es que exista una relacion semantica entre el mensaje del usuario
-    las herramientas disponibles y el historial reciente de la conversacion.
-    <HISTORIAL_RECIENTE_DE_CONVERSACION>
-      ${MessageManager.formatHistoryForLLM(history.slice(-5))}
-    </HISTORIAL_RECIENTE_DE_CONVERSACION>
-    <MENSAJE_DEL_USUARIO>
-    "${prompt}"
-    </MENSAJE_DEL_USUARIO>
-    <HERRAMIENTAS> 
-      ${tools.map((t) => `- ${t.name}: ${t.description}`).join("\n")}
-    </HERRAMIENTAS>
-
-
-   SOLO ejecutar herramientas si TODOS los parámetros requeridos están disponibles
-   Si falta algún parámetro requerido, NO ejecutar la herramienta
-    NO inventar datos ni usar valores genéricos
-    
-`;
-
-    // Usar modelo LITE (Flash)
-    const llmProvider = GoogleGenAIManager.getProvider(centerId, firestore);
-    const response = await llmProvider.generateContent({
-      prompt: toolPrompt,
-      trackTokens: true,
-      chatId: chatId + "_tools",
-      tools: [{ functionDeclarations: tools }],
-      toolConfig: {
-        functionCallingConfig: {
-          mode: FunctionCallingConfigMode.ANY,
-        },
-      },
-      config: {
-        temperature: 0.1, // Muy determinístico
-        maxOutputTokens: 2000,
-        topK: 10,
-        topP: 0.7,
-      },
-    });
-
-    // Procesar herramientas ejecutadas
-    let results: any[] = [];
-    if (response.functionCalls && response.functionCalls.length > 0) {
-      console.log(
-        new Date().toISOString(),
-        `🔧 ToolInterpreter FUNCTIONS: ${response.functionCalls
-          .map((f) => f.name)
-          .join(", ")} herramientas ejecutadas`
-      );
-      // Procesar cada llamada de función
-      results = await this.processFunctionCalls(
-        firestore,
-        chatId,
-        centerId,
-        response.functionCalls,
-        mcpConnection
-      );
-    }
-
-    const data =
-      results.length > 0
-        ? results
-            .map((r) => `${r.name}: ${JSON.stringify(r.response)}`)
-            .join("\n")
-        : "No se ejecutaron herramientas";
-
-    return { data, results };
-  }
-
-  /**
    * LLM1: Análisis especializado para decidir si ejecutar RAG
    */
   private static async executeRAGAnalysis(
@@ -656,15 +579,15 @@ export class ConversationOrchestrator {
     // Crear contenido nativo para análisis RAG (sin recursión)
     const ragContents: any[] = [];
 
-    // Agregar historial básico
-    history.slice(-10).forEach((message) => {
-      if (message.role === "user" || message.role === "assistant") {
-        ragContents.push({
-          role: message.role === "assistant" ? "model" : message.role,
-          parts: [{ text: message.content }],
-        });
-      }
-    });
+    // // Agregar historial básico
+    // history.slice(-10).forEach((message) => {
+    //   if (message.role === "user" || message.role === "assistant") {
+    //     ragContents.push({
+    //       role: message.role === "assistant" ? "model" : message.role,
+    //       parts: [{ text: message.content }],
+    //     });
+    //   }
+    // });
 
     // IMPORTANTE: Siempre agregar el prompt actual al final
     ragContents.push({
@@ -685,23 +608,14 @@ export class ConversationOrchestrator {
         },
       },
       config: {
-        temperature: 0.2, // Más determinístico para decisiones
-        maxOutputTokens: 1500,
-        topK: 20,
-        topP: 0.8,
-        systemInstruction: `Eres un revisor que analiza si para responder a según el mensaje más reciente del usuario necesitas buscar información técnica específica sobre procesos, procedimientos, documentación o datos que no están en tu conocimiento base.
-
-IMPORTANTE: Solo usa la herramienta de búsqueda si:
-- El usuario pregunta sobre procesos específicos de la empresa
-- Necesitas documentación técnica actual
-- Requieres datos operacionales específicos
-- La pregunta es sobre procedimientos internos
-
-NO uses la herramienta si:
-- Es conversación casual
-- Preguntas generales que puedes responder
-
-Si decides buscar, hazlo. Si no, responde normalmente.`,
+        temperature: 0.1, // Más determinístico para decisiones
+        maxOutputTokens: 100,
+        topK: 10,
+        topP: 0.7,
+        systemInstruction: `Decide si buscar en documentos internos.
+          SÍ buscar: procesos empresa, documentación técnica, procedimientos
+          NO buscar: saludos, conversación general, puedes responder
+          Ejecuta inmediatamente si corresponde.`,
       },
     });
 
@@ -758,7 +672,7 @@ Si decides buscar, hazlo. Si no, responde normalmente.`,
           // Optimización: una sola iteración sobre toolData
           const functionCalls: any[] = [];
           const functionResponses: any[] = [];
-          
+
           // Una sola iteración para construir ambos arrays
           for (const [toolName, data] of Object.entries(message.toolData)) {
             const toolData = data as any; // Type assertion para toolData
@@ -768,7 +682,7 @@ Si decides buscar, hazlo. Si no, responde normalmente.`,
                 args: toolData.params || toolData.args || {},
               },
             });
-            
+
             functionResponses.push({
               functionResponse: {
                 name: toolName,
@@ -808,83 +722,29 @@ Si decides buscar, hazlo. Si no, responde normalmente.`,
   }
 
   /**
-   * KISS: Intérprete de intención simple - RETORNA texto explicativo
-   */
-  private static async executeIntentionInterpreter(
-    prompt: string,
-    tools: any[],
-    history: any[],
-    centerId: string,
-    firestore: Firestore
-  ): Promise<string> {
-    const intentionPrompt = `
-    Eres un interprete en una conversacion (chat) entre un asistente y un usuario Tu trabajo es analizar el mensaje del usuario para entender su relación con el historial
-    y las herramientas disponibles segun su descripción para determinar la intención mas probable y definir con criterio
-    lo que el usuario quiere lograr. y si una herramienta es necesaria o no.
-    tu respuesta debe ser siempre en el mismo formato
-    por favor analiza profundamente Si algun parametro requerido para una herramienta falta, sugiere pedir el dato.
-    En caso del que no tengas claro la intencion del usuario, mira si el mensaje, revisa similitudes entre palabras claves entre las herramientas y lo que pide el usuario. 
-
-    breve explicacion en una lista aparte una lista tipo
-    - Herramienta A
-    - Herramienta B
-    etc de las que consideres que son necesarias para resolver la consulta del usuario.
-    y listo. Eres un experto en esto tu volmen de fallos es casi 0.
-    <HISTORIAL_RECIENTE_DE_CONVERSACION>
-      ${MessageManager.formatHistoryForLLM(history.slice(-5))}
-    </HISTORIAL_RECIENTE_DE_CONVERSACION>
-    <MENSAJE_DEL_USUARIO>
-    "${prompt}"
-    </MENSAJE_DEL_USUARIO>
-    <HERRAMIENTAS> 
-      ${tools.map((t) => `- ${t.name}: ${t.description}`).join("\n")}
-    </HERRAMIENTAS>
-
- 
-    hora y fecha actual
-    ${new Date().toISOString()}
-    
-
-`;
-    const llmProvider = GoogleGenAIManager.getProvider(centerId, firestore);
-    const response = await llmProvider.generateContent({
-      prompt: intentionPrompt,
-      trackTokens: false,
-      toolConfig: {
-        functionCallingConfig: {
-          mode: FunctionCallingConfigMode.NONE,
-        },
-      },
-      config: {
-        temperature: 0.3,
-        maxOutputTokens: 1000,
-        topK: 20,
-        topP: 0.8,
-      },
-    });
-    // console.log("RESPONSE INTENTION INTERPRETER:", response);
-    return response.text;
-  }
-
-  /**
    * Prepara herramientas MCP de forma asíncrona
    */
-  private static async prepareMCPTools(centerId: string): Promise<{ 
-    tools: any[], 
-    connection: MCPConnection | null 
+  private static async prepareMCPTools(centerId: string): Promise<{
+    tools: any[];
+    connection: MCPConnection | null;
   }> {
     try {
       // Intentar conectar a MCP del centro
-      const mcpConnection = await this.mcpConnectionManager.connectToCenter(centerId);
+      const mcpConnection = await this.mcpConnectionManager.connectToCenter(
+        centerId
+      );
 
       if (mcpConnection.isConnected) {
         // Obtener herramientas disponibles del centro
-        const mcpTools = await this.mcpConnectionManager.getAvailableTools(centerId);
+        const mcpTools = await this.mcpConnectionManager.getAvailableTools(
+          centerId
+        );
         const validTools = this.mcpAdapter.filterValidMCPTools(mcpTools);
 
         if (validTools.length > 0) {
           // Convertir herramientas MCP a formato Google GenAI
-          const mcpGenAITools = this.mcpAdapter.convertMCPToolsToGenAI(validTools);
+          const mcpGenAITools =
+            this.mcpAdapter.convertMCPToolsToGenAI(validTools);
           return { tools: mcpGenAITools, connection: mcpConnection };
         }
       }
