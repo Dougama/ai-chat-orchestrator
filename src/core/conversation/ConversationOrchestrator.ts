@@ -177,9 +177,14 @@ export class ConversationOrchestrator {
         las herramientas tienen descripciones que te ayudan a entender para que sirven. Analiza cuales parametros son requerido y cuales son opcionales..
         no inventes datos ni uses valores genéricos, usa los datos que te dan las herramientas
         no solicites al usuario parametros exactos brindale una solicitud intepretada por ti de lo que se requiere
-
-        Analiza los resultados de las erramientas asegurate de tener todos los parametros necesarios para decidir ejecutar una herramienta.
+        Analiza los resultados de las herramientas asegurate de tener todos los parametros necesarios para decidir ejecutar una herramienta.
         Si no los tienes pregunta o validalos con el usuario.
+        
+        importante: hace parte de tu trabajo entender los parametros de las herramientas y ayudar al usuario proporcionartelos servicialmente
+        hay herramientas que tienen parametros que se constituyen a partir de datos precisos, por ejemplo id_x: {DATO_A}_{DATO_B}...etc
+        No le pidas al usuario que te brinde el parametro aramado, tu debes pedirle los datos que lo constituyen y armarlo tu mismo. 
+
+        
         
         ${
           ragResults?.executed && ragResults.result
