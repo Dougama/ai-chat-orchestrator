@@ -166,6 +166,25 @@ export class ConversationOrchestrator {
         topK: 40,
         topP: 0.95,
         systemInstruction: `
+            
+        ${
+          ragResults?.executed && ragResults.result
+            ? `
+        # BASE DEL CONOCIMIENTO:
+        ${JSON.stringify(ragResults.result.response, null, 2)}
+        
+        INSTRUCCIÓN IMPORTANTE: Si existe la base del conocimiento arriba y tiene relación con lo que pregunta el usuario según el historial y su último mensaje, entonces responde basado en esa información. Si no tiene relación o no existe, continúa decidiendo lo que consideres apropiado, ya sea ejecutar herramientas o responder de otra manera.
+        `
+            : ""
+        }
+            ${
+              ragResults?.executed && ragResults.result
+                ? `
+        # CONTEXTO RAG:
+        ${JSON.stringify(ragResults.result.response, null, 2)}
+        `
+                : ""
+            }
         Fecha y hora actual: ${new Date().toISOString()}
 
         Eres Chelita, una asistente inteligente, amable y eficiente. Servicial y muy dispuesta a ayudar.
@@ -181,21 +200,7 @@ export class ConversationOrchestrator {
         Si no los tienes pregunta o validalos con el usuario.
         
         importante: hace parte de tu trabajo entender los parametros de las herramientas y ayudar al usuario proporcionartelos servicialmente
-        hay herramientas que tienen parametros que se constituyen a partir de datos precisos, por ejemplo id_x: {DATO_A}_{DATO_B}...etc
-        No le pidas al usuario que te brinde el parametro aramado, tu debes pedirle los datos que lo constituyen y armarlo tu mismo. 
-
-        
-        
-        ${
-          ragResults?.executed && ragResults.result
-            ? `
-        # BASE DEL CONOCIMIENTO:
-        ${JSON.stringify(ragResults.result.response, null, 2)}
-        
-        INSTRUCCIÓN IMPORTANTE: Si existe la base del conocimiento arriba y tiene relación con lo que pregunta el usuario según el historial y su último mensaje, entonces responde basado en esa información. Si no tiene relación o no existe, continúa decidiendo lo que consideres apropiado, ya sea ejecutar herramientas o responder de otra manera.
-        `
-            : ""
-        }
+    
         `,
       },
     });
