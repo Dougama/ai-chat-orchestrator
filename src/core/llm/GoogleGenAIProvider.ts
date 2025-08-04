@@ -11,7 +11,7 @@ import { TokenTrackingService } from "../tracking/TokenTrackingService";
 import { Firestore } from "@google-cloud/firestore";
 
 const EMBEDDING_MODEL = "text-embedding-004";
-const GENERATIVE_MODEL_ID = "gemini-2.0-flash-lite";
+const GENERATIVE_MODEL_ID = "gemini-2.0-flash";
 
 // Configuración multi-tenant
 interface ProviderConfig {
