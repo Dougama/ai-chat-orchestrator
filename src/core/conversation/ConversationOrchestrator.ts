@@ -87,11 +87,7 @@ export class ConversationOrchestrator {
     // Paralelizar preparación de herramientas internas y MCP
     const [internalToolsResult, mcpResult] = await Promise.allSettled([
       // Herramientas internas (síncronas)
-      Promise.resolve(
-        this.getInternalTools().filter(
-          (tool) => tool.name !== "buscar_informacion_operacional"
-        )
-      ),
+      Promise.resolve(this.getInternalTools()),
       // Herramientas MCP (asíncronas)
       centerId
         ? this.prepareMCPTools(centerId)
