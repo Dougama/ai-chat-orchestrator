@@ -11,6 +11,13 @@ import { Firestore } from "@google-cloud/firestore";
 import { FunctionCallingConfigMode } from "@google/genai";
 import { toolRegistry } from "../../tools/definitions/tool_registry";
 
+interface ToolAnalysisResult {
+  executed: boolean;
+  data?: string;
+  results?: any[];
+  llm1Text?: string | null;
+}
+
 export class ConversationOrchestrator {
   private static mcpConnectionManager = new MCPConnectionManager();
   private static mcpAdapter = new MCPAdapter();
@@ -190,6 +197,17 @@ export class ConversationOrchestrator {
         `
             : ""
         }
+
+        ${
+          toolResults?.llm1Text
+            ? `
+        # ANÁLISIS DEL AGENTE 1:
+        ${toolResults.llm1Text}
+        
+        INSTRUCCIÓN: Usa este análisis del Agente 1 para complementar tu respuesta si es relevante para la consulta del usuario.
+        `
+            : ""
+        }
     
 
         Fecha y hora actual: ${new Date().toISOString()}
@@ -213,6 +231,8 @@ export class ConversationOrchestrator {
     
         si por alguna razon necesitas informacion de algunas de las herramientas, y no te llego informacion de alguna, 
         pidele confirmacion al usuario sobre tu sospecha 
+        PROHIBIDO: retornar nombres de herramientas, parametros o datos técnicos. 
+        te debes referir a las herramientas como capacidades o habilidades que tienes tuyas que usas solo tu.
         `,
       },
     });
@@ -582,10 +602,10 @@ export class ConversationOrchestrator {
     chatId: string,
     availableTools: any[],
     mcpConnection: MCPConnection | null
-  ): Promise<{ executed: boolean; data?: string; results?: any[] }> {
+  ): Promise<ToolAnalysisResult> {
     // Si no hay herramientas disponibles, no ejecutar análisis
     if (!availableTools || availableTools.length === 0) {
-      return { executed: false };
+      return { executed: false, llm1Text: null };
     }
 
     // Crear contenido nativo para análisis RAG (sin recursión)
@@ -632,8 +652,10 @@ export class ConversationOrchestrator {
           y la intencion del usuario segun su pregunta, mensaje o solicitud actual: ${prompt}
           y su relacion con el historial.
           Si decides ejecutar alguna herramienta cualquiera  utiliza  la herramienta buscar_informacion_operacional para buscar informacion que ayude a complementar los datos ya sea para mejorar los resultados o algun consejo. tu decides el parametro de busqueda basado en la descripción de la herramienta que decidiste ejecutar.
-
+          Papi cuando algo tengas dudas remitete siempre a la herramienta buscar_informacion_operacional, es una herramienta que tiene informacion de la empresa, seguro tendrás suerte si 
+          usas tu creatividad para buscar segun convenga.
           NO EJECTUAR: saludos, conversación general
+          PROHIBIDO: llamar herramientas si no tienes todos los parametros requeridos.
           Ejecuta inmediatamente si corresponde.`,
       },
     });
@@ -659,10 +681,14 @@ export class ConversationOrchestrator {
             ? JSON.stringify(toolResults.map((r) => r.response))
             : "Sin resultados de herramientas",
         results: toolResults,
+        llm1Text: toolResponse.text || null,
       };
     }
 
-    return { executed: false };
+    return {
+      executed: false,
+      llm1Text: toolResponse.text || null,
+    };
   }
 
   /**
@@ -671,7 +697,7 @@ export class ConversationOrchestrator {
   private static formatHistoryForNativeSDK(
     history: any[],
     currentPrompt: string,
-    toolResults?: { executed: boolean; data?: string; results?: any[] }
+    toolResults?: ToolAnalysisResult
   ): any[] {
     const contents: any[] = [];
 
